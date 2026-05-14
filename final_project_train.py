@@ -28,10 +28,10 @@ from PIL import Image
 from gymnasium.vector import AsyncVectorEnv
 
 import evorob.world                         # registers EvalEnv-v0
-from evorob.algorithms.nsga_sol import NSGAII
+from evorob.algorithms.nsga import NSGAII
 from evorob.utils.filesys import get_last_checkpoint_dir, get_project_root
 from evorob.world.base import World
-from evorob.world.robot.controllers.mlp_sol import NeuralNetworkController
+from evorob.world.robot.controllers.mlp import NeuralNetworkController
 from evorob.world.robot.morphology.ant_custom_robot import AntRobot
 
 ROOT_DIR = get_project_root()
@@ -467,15 +467,15 @@ def evaluate_checkpoint(
 # ---------------------------------------------------------------------------
 
 def run_multi_task_evolution(
-    num_generations: int = 100,
-    population_size: int = 100,
-    n_parents:       int = 50,
-    n_repeats:       int = 4,
-    n_steps:         int = 500,
-    mutation_prob:   float = 0.3,
-    crossover_prob:  float = 0.5,
-    bounds:          tuple = (-1, 1),
-    ckpt_interval:   int = 10,
+    num_generations: int = 50, # originally 100
+    population_size: int = 50, # originally 100
+    n_parents:       int = 25, # originally 50
+    n_repeats:       int = 2, # originally 4
+    n_steps:         int = 500, # originally 500
+    mutation_prob:   float = 0.3, # originally 0.3
+    crossover_prob:  float = 0.5, # originally 0.5
+    bounds:          tuple = (-1, 1), # originally -1, 1
+    ckpt_interval:   int = 10, # originally 10
     results_dir:     str = None,
     random_seed:     int = 42,
 ) -> None:

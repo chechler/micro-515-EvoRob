@@ -76,7 +76,7 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         cfrc_cost = float(np.sum(self.data.cfrc_ext[1:] ** 2) * self._cfrc_cost_weight)
 
         terminated = self._is_terminated()
-        reward = healthy_reward + x_velocity - ctrl_cost - cfrc_cost
+        reward = healthy_reward + x_after*x_after - ctrl_cost - cfrc_cost
 
         info = {
             "healthy_reward": -10.0 if terminated else healthy_reward,
