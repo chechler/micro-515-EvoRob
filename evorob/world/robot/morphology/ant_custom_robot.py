@@ -1,6 +1,5 @@
 import copy
 import os.path
-import xml.dom.minidom as minidom
 import xml.etree.ElementTree as xml
 
 import numpy as np
@@ -90,13 +89,11 @@ class AntRobot:
         self.identify_structures()
 
     def write_xml(self, directory: str = "./") -> None:
-        xml_string = minidom.parseString(
-            xml.tostring(self.xml, encoding="unicode", method="xml")
-        ).toprettyxml(indent="    ")
+        path = os.path.join(directory, self.name + ".xml")
         if self.verbose:
-            print("Saving xml to: ", os.path.join(directory, self.name + ".xml"))
-        with open(os.path.join(directory, self.name + ".xml"), "w") as f:
-            f.write(xml_string)
+            print("Saving xml to: ", path)
+        with open(path, "w") as f:
+            f.write(xml.tostring(self.xml, encoding="unicode", method="xml"))
         if self.verbose:
             print("Saved succesfully!")
 

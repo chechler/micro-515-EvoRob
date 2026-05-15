@@ -14,7 +14,7 @@ class HebbianNumpyNetwork:
         self.size_l2 = n_hidden * n_output
         self.total_weights = self.size_l1 + self.size_l2
 
-        self.lr = 0.1
+        self.lr = 0.01
 
         self.A = np.zeros(self.total_weights)
         self.B = np.zeros(self.total_weights)
@@ -22,15 +22,15 @@ class HebbianNumpyNetwork:
         self.D = np.zeros(self.total_weights)
 
         rng = np.random.default_rng(42)
-        self.rescale_weights = 1
-        self.lin1_init = rng.uniform(-self.rescale_weights,  self.rescale_weights, (n_hidden, n_input))
-        self.output_init = rng.uniform(-self.rescale_weights,  self.rescale_weights, (n_output, n_hidden))
+        self.rescale_weights = 0.1
+        self.lin1_init = rng.uniform(-self.rescale_weights, self.rescale_weights, (n_hidden, n_input)).astype(np.float32)
+        self.output_init = rng.uniform(-self.rescale_weights, self.rescale_weights, (n_output, n_hidden)).astype(np.float32)
 
         self.lin1: np.ndarray
         self.output: np.ndarray
 
     def set_hebbian_rules(self, abcd: np.ndarray) -> None:
-        abcd = np.array(abcd).reshape(4, self.total_weights)
+        abcd = np.array(abcd, dtype=np.float32).reshape(4, self.total_weights)
         self.A = abcd[0, :]
         self.B = abcd[1, :]
         self.C = abcd[2, :]
@@ -68,6 +68,7 @@ class HebbianNumpyNetwork:
             self.D1
         )
         self.lin1 += delta_1
+        self.lin1 = np.clip(self.lin1, -5.0, 5.0)
 
         outer_2 = np.einsum('bo,bh->boh', output_l, hid_l)
         delta_2 = self.lr * (
@@ -77,6 +78,7 @@ class HebbianNumpyNetwork:
             self.D2
         )
         self.output += delta_2
+        self.output = np.clip(self.output, -5.0, 5.0)
 
         return output_l
 

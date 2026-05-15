@@ -212,15 +212,13 @@ class NSGAII(EA):
                 r2 = np.random.randint(0, n_current)
 
             jrand = np.random.randint(0, self.n_params)
-            for j in range(self.n_params):
-                if np.random.random() <= self.crossover_prob or j == jrand:
-                    new_offspring[i][j] = (
-                            self.current_population[parent_idx][j]
-                            + self.mutation_prob
-                            * (self.current_population[r1][j] - self.current_population[r2][j])
-                    )
-                else:
-                    new_offspring[i][j] = self.current_population[parent_idx][j]
+            cross_mask = np.random.random(self.n_params) <= self.crossover_prob
+            cross_mask[jrand] = True
+            parent = self.current_population[parent_idx]
+            diff   = self.current_population[r1] - self.current_population[r2]
+            new_offspring[i] = np.where(cross_mask,
+                                        parent + self.mutation_prob * diff,
+                                        parent)
         mutated_population = np.clip(new_offspring, self.min, self.max)
         return mutated_population
 
@@ -308,57 +306,39 @@ class NSGAII(EA):
 
 
         """
-        domination_lists: List[List[int]] = [[] for _ in range(len(fitness))]
-        domination_counts: List[int] = [0 for _ in range(len(fitness))]
-        population_rank: List[int] = [0 for _ in range(len(fitness))]
-        pareto_fronts: List[List[int]] = [[]]
+        n = len(fitness)
+        # Vectorized dominance: dom[i,j] = True if solution i dominates solution j.
+        # Broadcasting over (n,1,m) vs (1,n,m) avoids the O(N²) Python loop.
+        f = fitness[:, None, :]            # (n, 1, m)
+        g = fitness[None, :, :]            # (1, n, m)
+        all_geq = np.all(f >= g, axis=2)   # i >= j on every objective
+        any_gt  = np.any(f > g, axis=2)    # i >  j on at least one objective
+        dom_matrix = all_geq & any_gt      # dom_matrix[i,j] = i dominates j
+        np.fill_diagonal(dom_matrix, False)
 
-        for individual_a in range(len(fitness)):
-            for individual_b in range(len(fitness)):
-                # does candidate 1 dominate candidate 2?
-                if self.dominates(fitness[individual_a], fitness[individual_b]):
-                    # append index of dominating solution
-                    domination_lists[individual_a].append(individual_b)
+        domination_lists: List[List[int]] = [list(np.where(dom_matrix[i])[0]) for i in range(n)]
+        domination_counts: List[int]      = dom_matrix.sum(axis=0).tolist()
+        population_rank: List[int]        = [0] * n
+        pareto_fronts: List[List[int]]    = [[]]
 
-                # does candidate 2 dominate candidate 1?
-                elif self.dominates(fitness[individual_b], fitness[individual_a]):
-                    #
-                    domination_counts[individual_a] += 1
-
-            # if solution dominates all
+        for individual_a in range(n):
             if domination_counts[individual_a] == 0:
-                # placeholder solution rank
                 population_rank[individual_a] = 0
-
-                # add solution to first Pareto front
                 pareto_fronts[0].append(individual_a)
 
-        # iterates until there are no more items appended in the last front
         i: int = 0
         while pareto_fronts[i]:
-            # open next front
             next_front: List[int] = []
-
-            # iterate through all items in previous front
             for individual_a in pareto_fronts[i]:
-                # check all other items which are dominated by this item
                 for individual_b in domination_lists[individual_a]:
-                    # reduce domination count
                     domination_counts[individual_b] -= 1
-
-                    # every now nondominated item are append to next front
                     if domination_counts[individual_b] == 0:
-                        # add solution rank
                         population_rank[individual_b] = i + 1
                         next_front.append(individual_b)
-
             i += 1
-
             pareto_fronts.append(next_front)
 
-        # removes last empty front
         pareto_fronts.pop()
-
         return pareto_fronts, population_rank
 
     def compute_crowding_distance(self, fitness: np.ndarray, front: List[int]) -> np.ndarray:

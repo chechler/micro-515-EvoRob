@@ -6,8 +6,6 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-os.environ.setdefault("MUJOCO_GL", "egl")
-
 from evorob.utils.filesys import get_last_checkpoint_dir, get_project_root
 from evorob.world.base import World
 from evorob.world.robot.controllers.base import Controller
@@ -73,8 +71,8 @@ class EvalWorld(World):
 
     @staticmethod
     def _default_controller():
-        from evorob.world.robot.controllers.mlp_sol import NeuralNetworkController
-        return NeuralNetworkController(input_size=27, output_size=8, hidden_size=8)
+        from evorob.world.robot.controllers.mlp_hebbian import HebbianController
+        return HebbianController(input_size=27, output_size=8, hidden_size=8)
 
     def set_controller(self, controller: Controller) -> None:
         """Override the default MLP controller.
@@ -121,13 +119,13 @@ class EvalWorld(World):
     def geno2pheno(self, genotype: np.ndarray) -> None:
         """Pass the controller portion of the genotype to controller.geno2pheno().
 
-        No scaling is applied — the controller's own geno2pheno is responsible
-        for any necessary transformation of the raw genotype values.
+        Applies the same * 0.1 scaling that FinalWorld.geno2pheno uses so that
+        weights are identical between training and evaluation.
 
         The body morphology is NOT regenerated here — call update_robot_xml first
         to provide the robot XML, then call geno2pheno to load the controller.
         """
-        self.controller.geno2pheno(genotype[:self.n_weights])
+        self.controller.geno2pheno(genotype[:self.n_weights] * 0.1)
 
     # ------------------------------------------------------------------
     # One-shot loader from a FinalWorld checkpoint

@@ -95,8 +95,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         z = float(self.data.qpos[2])
         return (
             not np.isfinite(self.state_vector()).all()
-            or z < 0.2
-            or z > 1.0
+            or z < 0.3
+            or z > 0.8
         )
 
     def _get_obs(self):

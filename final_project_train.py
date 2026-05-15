@@ -16,8 +16,19 @@ evolved robot on it using final_project_test.py — it is not trained on.
 """
 
 import os
+import platform
+
+if "MUJOCO_GL" not in os.environ:
+    if platform.system() == "Darwin":
+        os.environ["MUJOCO_GL"] = "glfw"
+    else:
+        os.environ["MUJOCO_GL"] = "osmesa"
+
+import copy
+import multiprocessing
 import shutil
 import xml.etree.ElementTree as xml
+from concurrent.futures import ProcessPoolExecutor
 from os.path import join
 from tempfile import TemporaryDirectory
 
@@ -25,13 +36,13 @@ import gymnasium as gym
 import numpy as np
 import scipy.ndimage
 from PIL import Image
-from gymnasium.vector import AsyncVectorEnv
+from gymnasium.vector import SyncVectorEnv
 
 import evorob.world                         # registers EvalEnv-v0
 from evorob.algorithms.nsga import NSGAII
 from evorob.utils.filesys import get_last_checkpoint_dir, get_project_root
 from evorob.world.base import World
-from evorob.world.robot.controllers.mlp import NeuralNetworkController
+from evorob.world.robot.controllers.mlp_hebbian import HebbianController
 from evorob.world.robot.morphology.ant_custom_robot import AntRobot
 
 ROOT_DIR = get_project_root()
@@ -58,7 +69,7 @@ class FinalWorld(World):
         # from evorob.world.robot.controllers.mlp import NeuralNetworkController  # your impl
         # from evorob.world.robot.controllers.so2 import SO2Controller
         # self.controller = SO2Controller(input_size=27, output_size=8, hidden_size=8)
-        self.controller = NeuralNetworkController(
+        self.controller = HebbianController(
             input_size=27, output_size=8, hidden_size=8
         )
 
@@ -98,6 +109,11 @@ class FinalWorld(World):
         self.sensor_fn = None
 
         self._create_terrain_file("terrain.png")
+
+        # Parse terrain templates once — deepcopy them per individual instead of re-reading disk
+        self._flat_tmpl = xml.parse(join(_ASSETS, "flat_world.xml")).getroot()
+        self._ice_tmpl  = xml.parse(join(_ASSETS, "ice_world.xml")).getroot()
+        self._hill_tmpl = xml.parse(join(_ASSETS, "hill_world.xml")).getroot()
 
     # ------------------------------------------------------------------
     # Genotype → phenotype
@@ -184,13 +200,12 @@ class FinalWorld(World):
         robot.xml = robot.define_robot()
         robot.write_xml(self.temp_dir.name)          # → Robot.xml
 
-        for template, world_file in [
-            (join(_ASSETS, "flat_world.xml"), self.flat_world_file),
-            (join(_ASSETS, "ice_world.xml"),  self.ice_world_file),
-            (join(_ASSETS, "hill_world.xml"), self.hill_world_file),
+        for tmpl_root, world_file in [
+            (self._flat_tmpl, self.flat_world_file),
+            (self._ice_tmpl,  self.ice_world_file),
+            (self._hill_tmpl, self.hill_world_file),
         ]:
-            tree = xml.parse(template)
-            root = tree.getroot()
+            root = copy.deepcopy(tmpl_root)
             root.append(xml.Element("include", attrib={"file": "Robot.xml"}))
             with open(world_file, "w") as f:
                 f.write(xml.tostring(root, encoding="unicode"))
@@ -229,7 +244,7 @@ class FinalWorld(World):
 
     def _run_env(self, env_id: str, world_file: str, n_repeats: int, n_steps: int) -> float:
         """Run n_repeats parallel episodes and return the mean total reward."""
-        envs = AsyncVectorEnv([
+        envs = SyncVectorEnv([
             (lambda eid, wf: lambda: gym.make(
                 eid, robot_path=wf, max_episode_steps=n_steps
             ))(env_id, world_file)
@@ -463,6 +478,33 @@ def evaluate_checkpoint(
 
 
 # ---------------------------------------------------------------------------
+# Parallel evaluation helpers  (module-level so multiprocessing can pickle them)
+# ---------------------------------------------------------------------------
+
+# One FinalWorld per worker process — created by the pool initializer, reused
+# across all tasks that land on the same worker (avoids repeating temp-dir +
+# terrain-PNG setup for every individual).
+_worker_world: "FinalWorld | None" = None
+
+
+def _init_worker() -> None:
+    global _worker_world
+    _worker_world = FinalWorld()
+
+
+def _eval_individual_parallel(args: tuple) -> tuple:
+    """Evaluate one genotype and return (fitness_array, robot_xml_str)."""
+    genotype, n_repeats, n_steps = args
+    fitness = _worker_world.evaluate_individual(genotype, n_repeats, n_steps)
+    robot_xml_path = join(_worker_world.temp_dir.name, "Robot.xml")
+    xml_str = None
+    if os.path.isfile(robot_xml_path):
+        with open(robot_xml_path) as fh:
+            xml_str = fh.read()
+    return fitness, xml_str
+
+
+# ---------------------------------------------------------------------------
 # Main training loop
 # ---------------------------------------------------------------------------
 
@@ -486,7 +528,11 @@ def run_multi_task_evolution(
           f"  (controller={world.n_weights}, body={world.n_body_params})")
 
     if results_dir is None:
-        results_dir = join(ROOT_DIR, "results", "final_project")
+        scratch = os.environ.get("SCRATCH")
+        if scratch:
+            results_dir = os.path.join(scratch, "micro-515-EvoRob", "results", "final_project")
+        else:
+            results_dir = join(ROOT_DIR, "results", "final_project")
 
     ea = NSGAII(
         population_size=population_size,
@@ -508,27 +554,59 @@ def run_multi_task_evolution(
     _best_xml_stage = join(results_dir, "_best_robot.xml")  # staging copy of best robot
     _best_scalar = -np.inf
 
-    for gen in range(num_generations):
-        pop = ea.ask()
-        fitnesses = np.empty((len(pop), n_obj))
-        for idx, genotype in enumerate(pop):
-            fitnesses[idx] = world.evaluate_individual(
-                genotype, n_repeats=n_repeats, n_steps=n_steps
-            )
-            scalar = float(fitnesses[idx].sum())
-            if scalar > _best_scalar:
-                _best_scalar = scalar
+    # One worker process per allocated core. On SLURM, SLURM_CPUS_PER_TASK is
+    # the correct limit; os.cpu_count() returns the full node count and causes
+    # oversubscription. fork is used on Linux (much faster — no reimport of
+    # Python/MuJoCo per worker); spawn is required on macOS.
+    n_workers = min(
+        population_size,
+        int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 4)),
+    )
+    mp_ctx = multiprocessing.get_context(
+        "spawn" if platform.system() == "Darwin" else "fork"
+    )
+
+    with ProcessPoolExecutor(
+        max_workers=n_workers,
+        mp_context=mp_ctx,
+        initializer=_init_worker,
+    ) as executor:
+        for gen in range(num_generations):
+            pop = ea.ask()
+            fitnesses = np.empty((len(pop), n_obj))
+
+            results = list(executor.map(
+                _eval_individual_parallel,
+                [(g, n_repeats, n_steps) for g in pop],
+            ))
+
+            for idx, (fitness, xml_str) in enumerate(results):
+                fitnesses[idx] = fitness
+                scalar = float(fitness.sum())
+                if scalar > _best_scalar:
+                    _best_scalar = scalar
+                    if xml_str is not None:
+                        with open(_best_xml_stage, "w") as fh:
+                            fh.write(xml_str)
+
+            # Per-generation uprightness diagnostic
+            terrain_labels = ["flat", "ice ", "hill"]
+            gen_tag = f"Gen {gen}"
+            for i, label in enumerate(terrain_labels):
+                col = fitnesses[:, i]
+                mean_f    = float(col.mean())
+                pct_alive = float((col > 0).mean()) * 100
+                best_f    = float(col.max())
+                prefix = gen_tag if i == 0 else " " * len(gen_tag)
+                print(f"  {prefix} | {label}: mean={mean_f:+8.1f} ({pct_alive:3.0f}% alive)  best={best_f:+8.1f}")
+
+            save_ckpt = (gen % ckpt_interval == 0)
+            ea.tell(pop, fitnesses, save_checkpoint=save_ckpt)
+            if save_ckpt:
                 shutil.copy2(
-                    join(world.temp_dir.name, "Robot.xml"),
                     _best_xml_stage,
+                    join(results_dir, str(gen), "Robot.xml"),
                 )
-        save_ckpt = (gen % ckpt_interval == 0)
-        ea.tell(pop, fitnesses, save_checkpoint=save_ckpt)
-        if save_ckpt:
-            shutil.copy2(
-                _best_xml_stage,
-                join(results_dir, str(gen), "Robot.xml"),
-            )
 
     # --- Training summary ---
     best_f = ea.f_best_so_far  # shape (3,) for NSGA-II
@@ -552,13 +630,12 @@ def run_multi_task_evolution(
 
 
 if __name__ == "__main__":
-    # Quick smoke-test — 2 generations, tiny population
     run_multi_task_evolution(
-        num_generations=100,
-        population_size=32,
-        n_parents=32,
-        n_repeats=2,
-        n_steps=100,
-        ckpt_interval=1,
-        results_dir=join(ROOT_DIR, "results", "final_test"),
+        num_generations=30, # og 100
+        population_size=30, # og 100
+        n_parents=15, # og 50
+        n_repeats=3,
+        n_steps=500,
+        ckpt_interval=10,
+        results_dir=join(ROOT_DIR, "results", "final_project"),
     )

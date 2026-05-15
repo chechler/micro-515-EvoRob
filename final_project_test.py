@@ -41,9 +41,14 @@ Always include in your zip:
 
 import argparse
 import os
+import platform
 import numpy as np
 
-os.environ.setdefault("MUJOCO_GL", "egl")
+if "MUJOCO_GL" not in os.environ:
+    if platform.system() == "Darwin":
+        os.environ["MUJOCO_GL"] = "glfw"
+    else:
+        os.environ["MUJOCO_GL"] = "osmesa"
 
 import evorob.world          # registers EvalEnv-v0
 import gymnasium as gym
@@ -68,7 +73,7 @@ MY_CONTROLLER = None
 
 # --- Paths ---
 # Option A: directory that contains x_best.npy (recommended)
-CHECKPOINT_DIR = "results/final_project"
+CHECKPOINT_DIR = "results/final_test"
 
 # Option B: provide the robot XML and genotype as separate files
 ROBOT_XML_PATH = None   # e.g. "/abs/path/to/Robot.xml"
@@ -99,10 +104,15 @@ def run_episodes(world: EvalWorld, n_episodes: int, seed: int) -> list:
                    max_episode_steps=MAX_STEPS)
     rewards = []
 
+    print(f"\n  {'Ep':>3}  {'Total':>8}  {'Steps':>5}  {'Stop':>13}  {'x_pos':>7}  {'Upright':>7}")
+    print(f"  {'-'*3}  {'-'*8}  {'-'*5}  {'-'*13}  {'-'*7}  {'-'*7}")
+
     for ep in range(n_episodes):
         world.controller.reset_controller(batch_size=1)
         obs, _ = env.reset(seed=int(rng.integers(0, 2 ** 31)))
-        total, done = 0.0, False
+        total, done, steps = 0.0, False, 0
+        terminated = truncated = False
+        last_info: dict = {}
         while not done:
             ctrl_obs = world.sensor_fn(obs) if world.sensor_fn is not None else obs
             action = world.controller.get_action(ctrl_obs)
@@ -111,8 +121,14 @@ def run_episodes(world: EvalWorld, n_episodes: int, seed: int) -> list:
             obs, _, terminated, truncated, info = env.step(action)
             total += _neutral_reward(info)
             done = terminated or truncated
+            steps += 1
+            last_info = info
+
         rewards.append(total)
-        print(f"  episode {ep + 1:3d}/{n_episodes}: {total:.2f}")
+        reason  = "unhealthy/NaN" if terminated else "timeout"
+        x_pos   = float(last_info.get("x_position",    0.0))
+        upright = float(last_info.get("healthy_reward", 1.0)) > 0
+        print(f"  {ep+1:3d}  {total:8.2f}  {steps:5d}  {reason:>13}  {x_pos:7.2f}  {str(upright):>7}")
 
     env.close()
     return rewards
