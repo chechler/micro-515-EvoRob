@@ -13,8 +13,7 @@
 source $HOME/miniconda3/etc/profile.d/conda.sh
 conda activate evorob
 
-export MUJOCO_GL=egl
-export PYOPENGL_PLATFORM=egl
+export MUJOCO_GL=osmesa
 export SLURM_CPUS_PER_TASK=16
 
 mkdir -p logs
