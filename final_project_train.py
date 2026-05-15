@@ -511,9 +511,9 @@ def _eval_individual_parallel(args: tuple) -> tuple:
 # ---------------------------------------------------------------------------
 
 def run_multi_task_evolution(
-    num_generations: int = 50, # originally 100
-    population_size: int = 50, # originally 100
-    n_parents:       int = 25, # originally 50
+    num_generations: int = 500,
+    population_size: int = 200,
+    n_parents:       int = 100,
     n_repeats:       int = 2, # originally 4
     n_steps:         int = 500, # originally 500
     mutation_prob:   float = 0.3, # originally 0.3
