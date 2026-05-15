@@ -133,26 +133,27 @@ class FinalWorld(World):
         body_params    = (genotype[self.n_weights:] + 1) / 4 + 0.1
         self.controller.geno2pheno(control_params)
 
-        upper_leg, lower_leg = body_params
-        front_left_leg  = front_right_leg  = back_left_leg  = back_right_leg  = upper_leg
-        front_left_ankle = front_right_ankle = back_left_ankle = back_right_ankle = lower_leg
+        upper_leg, lower_leg = body_params  # shared across all 4 legs
+        u = np.sqrt(0.5) * upper_leg        # diagonal component for upper segment
+        l = np.sqrt(0.5) * lower_leg        # diagonal component for lower segment
 
-        # Define the 3D coordinates of the relative tree structure
-        front_left_hip_xyz = np.array([0.2, 0.2, 0])
-        front_left_knee_xyz = np.array([np.sqrt(0.5 * front_left_leg ** 2), np.sqrt(0.5 * front_left_leg ** 2), 0]) + front_left_hip_xyz
-        front_left_toe_xyz = np.array([np.sqrt(0.5 * front_left_ankle ** 2), np.sqrt(0.5 * front_left_ankle ** 2), 0]) + front_left_knee_xyz
+        # Define the 3D coordinates of the relative tree structure.
+        # All four legs use the same upper_leg and lower_leg lengths.
+        front_left_hip_xyz   = np.array([ 0.2,  0.2, 0])
+        front_left_knee_xyz  = front_left_hip_xyz  + np.array([ u,  u, 0])
+        front_left_toe_xyz   = front_left_knee_xyz + np.array([ l,  l, 0])
 
-        front_right_hip_xyz = np.array([-0.2, 0.2, 0])
-        front_right_knee_xyz = np.array([-np.sqrt(0.5 * front_right_leg ** 2), np.sqrt(0.5 * front_right_leg ** 2), 0]) + front_right_hip_xyz
-        front_right_toe_xyz = np.array([-np.sqrt(0.5 * front_right_ankle ** 2), np.sqrt(0.5 * front_right_ankle ** 2), 0]) + front_right_knee_xyz
+        front_right_hip_xyz  = np.array([-0.2,  0.2, 0])
+        front_right_knee_xyz = front_right_hip_xyz + np.array([-u,  u, 0])
+        front_right_toe_xyz  = front_right_knee_xyz + np.array([-l,  l, 0])
 
-        back_left_hip_xyz = np.array([-0.2, -0.2, 0])
-        back_left_knee_xyz = np.array([-np.sqrt(0.5 * back_left_leg ** 2), -np.sqrt(0.5 * back_left_leg ** 2), 0]) + back_left_hip_xyz
-        back_left_toe_xyz = np.array([-np.sqrt(0.5 * back_left_ankle ** 2), -np.sqrt(0.5 * back_left_ankle ** 2), 0]) + back_left_knee_xyz
+        back_left_hip_xyz    = np.array([-0.2, -0.2, 0])
+        back_left_knee_xyz   = back_left_hip_xyz   + np.array([-u, -u, 0])
+        back_left_toe_xyz    = back_left_knee_xyz  + np.array([-l, -l, 0])
 
-        back_right_hip_xyz = np.array([0.2, -0.2, 0])
-        back_right_knee_xyz = np.array([np.sqrt(0.5 * back_right_leg ** 2), -np.sqrt(0.5 * back_right_leg ** 2), 0]) + back_right_hip_xyz
-        back_right_toe_xyz = np.array([np.sqrt(0.5 * back_right_ankle ** 2), -np.sqrt(0.5 * back_right_ankle ** 2), 0]) + back_right_knee_xyz
+        back_right_hip_xyz   = np.array([ 0.2, -0.2, 0])
+        back_right_knee_xyz  = back_right_hip_xyz  + np.array([ u, -u, 0])
+        back_right_toe_xyz   = back_right_knee_xyz + np.array([ l, -l, 0])
 
         points = np.vstack([front_left_hip_xyz,
                             front_left_knee_xyz,
