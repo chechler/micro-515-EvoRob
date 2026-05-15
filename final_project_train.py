@@ -27,6 +27,7 @@ if "MUJOCO_GL" not in os.environ:
 import copy
 import multiprocessing
 import shutil
+import time
 import xml.etree.ElementTree as xml
 from concurrent.futures import ProcessPoolExecutor
 from os.path import join
@@ -277,7 +278,13 @@ class FinalWorld(World):
             for _ in range(n_repeats)
         ]
 
+        t_env0 = time.perf_counter()
         envs = SyncVectorEnv(env_fns)
+        # Reduce MuJoCo solver iterations 100→20: stable for ant, 5× faster physics.
+        for env in envs.envs:
+            env.unwrapped.model.opt.iterations = 20
+        print(f"[TIMER] env_create (flat+ice+hill): {time.perf_counter() - t_env0:.2f}s", flush=True)
+
         self.controller.reset_controller(batch_size=n_envs)
 
         rewards = np.zeros((n_steps, n_envs), dtype=np.float32)
@@ -286,6 +293,7 @@ class FinalWorld(World):
             obs = self.sensor_fn(obs)
         done = np.zeros(n_envs, dtype=bool)
 
+        t_roll0 = time.perf_counter()
         for t in range(n_steps):
             actions = np.where(done[:, None], 0, self.controller.get_action(obs))
             obs, r, terminated, truncated, _ = envs.step(actions)
@@ -295,6 +303,11 @@ class FinalWorld(World):
             done |= terminated | truncated
             if done.all():
                 break
+        t_roll = time.perf_counter() - t_roll0
+        # All three terrains run concurrently inside SyncVectorEnv; wall time is shared.
+        print(f"[TIMER] terrain flat:  {t_roll/3:.2f}s (concurrent)", flush=True)
+        print(f"[TIMER] terrain ice:   {t_roll/3:.2f}s (concurrent)", flush=True)
+        print(f"[TIMER] terrain hill:  {t_roll/3:.2f}s (concurrent)", flush=True)
 
         envs.close()
         total = rewards.sum(axis=0)
@@ -493,6 +506,10 @@ _worker_world: "FinalWorld | None" = None
 
 
 def _init_worker() -> None:
+    # Set GL env vars before any MuJoCo context is created in this process.
+    # Critical for spawn mode; harmless (and explicit) for fork mode.
+    os.environ.setdefault("MUJOCO_GL", "egl")
+    os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
     global _worker_world
     _worker_world = FinalWorld()
 
@@ -500,7 +517,9 @@ def _init_worker() -> None:
 def _eval_individual_parallel(args: tuple) -> tuple:
     """Evaluate one genotype and return (fitness_array, robot_xml_str)."""
     genotype, n_repeats, n_steps = args
+    t0 = time.perf_counter()
     fitness = _worker_world.evaluate_individual(genotype, n_repeats, n_steps)
+    print(f"[TIMER] single individual: {time.perf_counter() - t0:.2f}s", flush=True)
     robot_xml_path = join(_worker_world.temp_dir.name, "Robot.xml")
     xml_str = None
     if os.path.isfile(robot_xml_path):
@@ -563,10 +582,10 @@ def run_multi_task_evolution(
     # the correct limit; os.cpu_count() returns the full node count and causes
     # oversubscription. fork is used on Linux (much faster — no reimport of
     # Python/MuJoCo per worker); spawn is required on macOS.
-    n_workers = min(
-        population_size,
-        int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 4)),
-    )
+    slurm_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 4))
+    n_workers = min(population_size, slurm_cpus)
+    print(f"Workers : n_workers={n_workers}  population_size={population_size}"
+          f"  SLURM_CPUS_PER_TASK={slurm_cpus}", flush=True)
     mp_ctx = multiprocessing.get_context(
         "spawn" if platform.system() == "Darwin" else "fork"
     )
@@ -577,13 +596,16 @@ def run_multi_task_evolution(
         initializer=_init_worker,
     ) as executor:
         for gen in range(num_generations):
+            t_gen0 = time.perf_counter()
             pop = ea.ask()
             fitnesses = np.empty((len(pop), n_obj))
 
+            t_eval0 = time.perf_counter()
             results = list(executor.map(
                 _eval_individual_parallel,
                 [(g, n_repeats, n_steps) for g in pop],
             ))
+            print(f"[TIMER] population eval: {time.perf_counter() - t_eval0:.2f}s", flush=True)
 
             for idx, (fitness, xml_str) in enumerate(results):
                 fitnesses[idx] = fitness
@@ -594,18 +616,20 @@ def run_multi_task_evolution(
                         with open(_best_xml_stage, "w") as fh:
                             fh.write(xml_str)
 
-            # Per-generation uprightness diagnostic
+            # Per-generation log — flushed immediately so SLURM log stays current
             terrain_labels = ["flat", "ice ", "hill"]
-            gen_tag = f"Gen {gen}"
-            for i, label in enumerate(terrain_labels):
-                col = fitnesses[:, i]
+            best_scalar_this_gen = float(fitnesses.sum(axis=1).max())
+            print(f"\n=== Gen {gen+1}/{num_generations}  best_sum={best_scalar_this_gen:+.1f} ===", flush=True)
+            for label, col in zip(terrain_labels, fitnesses.T):
                 mean_f    = float(col.mean())
                 pct_alive = float((col > 0).mean()) * 100
                 best_f    = float(col.max())
-                prefix = gen_tag if i == 0 else " " * len(gen_tag)
-                print(f"  {prefix} | {label}: mean={mean_f:+8.1f} ({pct_alive:3.0f}% alive)  best={best_f:+8.1f}")
+                print(f"  {label}: mean={mean_f:+8.1f}  ({pct_alive:3.0f}% alive)  best={best_f:+8.1f}", flush=True)
 
+            t_tell0 = time.perf_counter()
             ea.tell(pop, fitnesses, save_checkpoint=False)
+            print(f"[TIMER] NSGA-II tell: {time.perf_counter() - t_tell0:.2f}s", flush=True)
+            print(f"[TIMER] generation {gen+1}: {time.perf_counter() - t_gen0:.2f}s", flush=True)
             if gen % ckpt_interval == 0:
                 gen_dir = join(results_dir, str(gen))
                 os.makedirs(gen_dir, exist_ok=True)

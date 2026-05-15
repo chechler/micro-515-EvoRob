@@ -13,9 +13,10 @@
 source $HOME/miniconda3/etc/profile.d/conda.sh
 conda activate evorob
 
-export MUJOCO_GL=osmesa
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
 export SLURM_CPUS_PER_TASK=64
 
 mkdir -p logs
 cd /home/hechler/ER_course/micro-515-EvoRob
-python final_project_train.py
+python -u final_project_train.py
