@@ -88,15 +88,15 @@ class FinalWorld(World):
         # Joint geometry — matches the AntRobot topology
         self.joint_limits = [
             [-30, 30], [30, 70],
-            [-30, 30], [-70, -30],
-            [-30, 30], [-70, -30],
+            [-30, 30], [30, 70],
+            [-30, 30], [30, 70],
             [-30, 30], [30, 70],
         ]
         self.joint_axis = [
-            [0, 0, 1], [-1, 1, 0],
-            [0, 0, 1], [1, 1, 0],
-            [0, 0, 1], [-1, 1, 0],
-            [0, 0, 1], [1, 1, 0],
+            [0, 0, 1], [-1,  1, 0],   # front_left  hip, knee
+            [0, 0, 1], [-1, -1, 0],   # front_right hip, knee
+            [0, 0, 1], [ 1, -1, 0],   # back_left   hip, knee
+            [0, 0, 1], [ 1,  1, 0],   # back_right  hip, knee
         ]
 
         # Custom sensor function — intercepts the raw env observation before it
