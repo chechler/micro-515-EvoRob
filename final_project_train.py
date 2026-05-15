@@ -74,7 +74,7 @@ class FinalWorld(World):
         )
 
         self.n_weights     = self.controller.n_params
-        self.n_body_params = 8          # 4 legs × (upper + lower segment length)
+        self.n_body_params = 2          # 1 upper + 1 lower length, shared across all 4 legs
         self.n_params      = self.n_weights + self.n_body_params
 
         # Temporary directory holds AntRobot.xml + one combined world XML per terrain
@@ -124,7 +124,7 @@ class FinalWorld(World):
 
         Splits genotype into:
           genotype[:n_weights]  → controller (scaled by 0.1 before loading)
-          genotype[n_weights:]  → 8 leg-segment lengths via (g+1)/4 + 0.1
+          genotype[n_weights:]  → 2 shared leg-segment lengths (upper, lower) via (g+1)/4 + 0.1
 
         Returns (points, connectivity_mat) for AntRobot construction.
         """
@@ -132,7 +132,9 @@ class FinalWorld(World):
         body_params    = (genotype[self.n_weights:] + 1) / 4 + 0.1
         self.controller.geno2pheno(control_params)
 
-        front_left_leg, front_left_ankle, front_right_leg, front_right_ankle, back_left_leg, back_left_ankle, back_right_leg, back_right_ankle, = body_params
+        upper_leg, lower_leg = body_params
+        front_left_leg  = front_right_leg  = back_left_leg  = back_right_leg  = upper_leg
+        front_left_ankle = front_right_ankle = back_left_ankle = back_right_ankle = lower_leg
 
         # Define the 3D coordinates of the relative tree structure
         front_left_hip_xyz = np.array([0.2, 0.2, 0])
@@ -631,9 +633,9 @@ def run_multi_task_evolution(
 
 if __name__ == "__main__":
     run_multi_task_evolution(
-        num_generations=30, # og 100
-        population_size=30, # og 100
-        n_parents=15, # og 50
+        num_generations=500,
+        population_size=200,
+        n_parents=100,
         n_repeats=3,
         n_steps=500,
         ckpt_interval=10,
