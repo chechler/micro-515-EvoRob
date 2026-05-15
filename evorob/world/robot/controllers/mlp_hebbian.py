@@ -53,32 +53,31 @@ class HebbianNumpyNetwork:
     def forward(self, state: np.ndarray):
         if state.ndim == 1:
             state = state.reshape(1, -1)
+        # Keep all arithmetic in float32; MuJoCo observations arrive as float64.
+        state = state.astype(np.float32, copy=False)
 
-        pre_act1 = np.einsum('bhi,bi->bh', self.lin1, state)
-        hid_l = np.tanh(pre_act1)
+        # Forward pass — matmul is faster than einsum for batched matrix-vector products.
+        hid_l    = np.tanh(np.matmul(self.lin1, state[..., None]).squeeze(-1))
+        output_l = np.tanh(np.matmul(self.output, hid_l[..., None]).squeeze(-1))
 
-        pre_act2 = np.einsum('boh,bh->bo', self.output, hid_l)
-        output_l = np.tanh(pre_act2)
-
+        # Hebbian weight updates
         outer_1 = np.einsum('bh,bi->bhi', hid_l, state)
-        delta_1 = self.lr * (
+        self.lin1 += self.lr * (
             self.A1 * outer_1 +
             self.B1 * state[:, None, :] +
             self.C1 * hid_l[:, :, None] +
             self.D1
         )
-        self.lin1 += delta_1
-        self.lin1 = np.clip(self.lin1, -5.0, 5.0)
+        np.clip(self.lin1, -5.0, 5.0, out=self.lin1)
 
         outer_2 = np.einsum('bo,bh->boh', output_l, hid_l)
-        delta_2 = self.lr * (
+        self.output += self.lr * (
             self.A2 * outer_2 +
             self.B2 * hid_l[:, None, :] +
             self.C2 * output_l[:, :, None] +
             self.D2
         )
-        self.output += delta_2
-        self.output = np.clip(self.output, -5.0, 5.0)
+        np.clip(self.output, -5.0, 5.0, out=self.output)
 
         return output_l
 

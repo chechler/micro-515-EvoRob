@@ -41,7 +41,7 @@ class EvalWorld(World):
     def __init__(self):
         self.controller = self._default_controller()
         self.n_weights = self.controller.n_params
-        self.n_body_params = 8          # 4 legs × (upper, lower)
+        self.n_body_params = 2          # 1 upper + 1 lower, shared across all 4 legs
         self.n_params = self.n_weights + self.n_body_params
 
         self.temp_dir = TemporaryDirectory()

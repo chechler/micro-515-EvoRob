@@ -240,45 +240,6 @@ class FinalWorld(World):
         img = Image.fromarray((terrain * 255).astype(np.uint8), mode="L")
         img.save(join(self.temp_dir.name, filename))
 
-    # ------------------------------------------------------------------
-    # Per-terrain evaluation
-    # ------------------------------------------------------------------
-
-    def _run_env(self, env_id: str, world_file: str, n_repeats: int, n_steps: int) -> float:
-        """Run n_repeats parallel episodes and return the mean total reward."""
-        envs = SyncVectorEnv([
-            (lambda eid, wf: lambda: gym.make(
-                eid, robot_path=wf, max_episode_steps=n_steps
-            ))(env_id, world_file)
-            for _ in range(n_repeats)
-        ])
-        self.controller.reset_controller(batch_size=n_repeats)
-        rewards = np.zeros((n_steps, n_repeats))
-        obs, _ = envs.reset()
-        if self.sensor_fn is not None:
-            obs = self.sensor_fn(obs)
-        done = np.zeros(n_repeats, dtype=bool)
-        for t in range(n_steps):
-            actions = np.where(done[:, None], 0, self.controller.get_action(obs))
-            obs, r, terminated, truncated, _ = envs.step(actions)
-            if self.sensor_fn is not None:
-                obs = self.sensor_fn(obs)
-            rewards[t, ~done] = r[~done]
-            done |= terminated | truncated
-            if done.all():
-                break
-        envs.close()
-        return float(rewards.sum(axis=0).mean())
-
-    def _eval_flat(self, n_repeats: int = 4, n_steps: int = 500) -> float:
-        return self._run_env("FlatEnv-v0", self.flat_world_file, n_repeats, n_steps)
-
-    def _eval_ice(self, n_repeats: int = 4, n_steps: int = 500) -> float:
-        return self._run_env("IceEnv-v0", self.ice_world_file, n_repeats, n_steps)
-
-    def _eval_hill(self, n_repeats: int = 4, n_steps: int = 500) -> float:
-        return self._run_env("HillEnv-v0", self.hill_world_file, n_repeats, n_steps)
-
     def create_env(self, render_mode: str = "rgb_array", **kwargs):
         """Return a HillEnv-v0 instance (used for visualisation)."""
         return gym.make("HillEnv-v0", robot_path=self.hill_world_file,
@@ -290,16 +251,58 @@ class FinalWorld(World):
 
     def evaluate_individual(self, genotype: np.ndarray,
                             n_repeats: int = 4, n_steps: int = 500) -> np.ndarray:
-        """Evaluate one genotype on all three training environments.
+        """Evaluate one genotype on all three terrains in a single SyncVectorEnv.
+
+        Creates n_repeats*3 environments at once (flat×n_repeats, ice×n_repeats,
+        hill×n_repeats), runs them simultaneously, then splits rewards by terrain.
+        This eliminates two MuJoCo init/teardown cycles compared to calling
+        separate SyncVectorEnvs per terrain.
 
         Returns a 1-D array of three objective values: [flat, ice, hill].
         """
         self.update_robot_xml(genotype)
+
+        terrain_configs = [
+            ("FlatEnv-v0", self.flat_world_file),
+            ("IceEnv-v0",  self.ice_world_file),
+            ("HillEnv-v0", self.hill_world_file),
+        ]
+        n_envs = len(terrain_configs) * n_repeats
+
+        env_fns = [
+            (lambda eid, wf: lambda: gym.make(
+                eid, robot_path=wf, max_episode_steps=n_steps
+            ))(env_id, wf)
+            for env_id, wf in terrain_configs
+            for _ in range(n_repeats)
+        ]
+
+        envs = SyncVectorEnv(env_fns)
+        self.controller.reset_controller(batch_size=n_envs)
+
+        rewards = np.zeros((n_steps, n_envs), dtype=np.float32)
+        obs, _ = envs.reset()
+        if self.sensor_fn is not None:
+            obs = self.sensor_fn(obs)
+        done = np.zeros(n_envs, dtype=bool)
+
+        for t in range(n_steps):
+            actions = np.where(done[:, None], 0, self.controller.get_action(obs))
+            obs, r, terminated, truncated, _ = envs.step(actions)
+            if self.sensor_fn is not None:
+                obs = self.sensor_fn(obs)
+            rewards[t, ~done] = r[~done]
+            done |= terminated | truncated
+            if done.all():
+                break
+
+        envs.close()
+        total = rewards.sum(axis=0)
         return np.array([
-            self._eval_flat(n_repeats, n_steps),
-            self._eval_ice(n_repeats, n_steps),
-            self._eval_hill(n_repeats, n_steps),
-        ])
+            total[0           :   n_repeats].mean(),
+            total[  n_repeats : 2*n_repeats].mean(),
+            total[2*n_repeats : 3*n_repeats].mean(),
+        ], dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -511,15 +514,15 @@ def _eval_individual_parallel(args: tuple) -> tuple:
 # ---------------------------------------------------------------------------
 
 def run_multi_task_evolution(
-    num_generations: int = 500,
-    population_size: int = 200,
-    n_parents:       int = 100,
-    n_repeats:       int = 2, # originally 4
-    n_steps:         int = 500, # originally 500
-    mutation_prob:   float = 0.3, # originally 0.3
-    crossover_prob:  float = 0.5, # originally 0.5
-    bounds:          tuple = (-1, 1), # originally -1, 1
-    ckpt_interval:   int = 10, # originally 10
+    num_generations: int = 200,
+    population_size: int = 100,
+    n_parents:       int = 50,
+    n_repeats:       int = 3,
+    n_steps:         int = 500,
+    mutation_prob:   float = 0.3,
+    crossover_prob:  float = 0.5,
+    bounds:          tuple = (-1, 1),
+    ckpt_interval:   int = 25,
     results_dir:     str = None,
     random_seed:     int = 42,
 ) -> None:
@@ -602,13 +605,14 @@ def run_multi_task_evolution(
                 prefix = gen_tag if i == 0 else " " * len(gen_tag)
                 print(f"  {prefix} | {label}: mean={mean_f:+8.1f} ({pct_alive:3.0f}% alive)  best={best_f:+8.1f}")
 
-            save_ckpt = (gen % ckpt_interval == 0)
-            ea.tell(pop, fitnesses, save_checkpoint=save_ckpt)
-            if save_ckpt:
-                shutil.copy2(
-                    _best_xml_stage,
-                    join(results_dir, str(gen), "Robot.xml"),
-                )
+            ea.tell(pop, fitnesses, save_checkpoint=False)
+            if gen % ckpt_interval == 0:
+                gen_dir = join(results_dir, str(gen))
+                os.makedirs(gen_dir, exist_ok=True)
+                np.save(join(gen_dir, "x_best"), ea.x_best_so_far)
+                np.save(join(gen_dir, "f_best"), ea.f_best_so_far)
+                if os.path.isfile(_best_xml_stage):
+                    shutil.copy2(_best_xml_stage, join(gen_dir, "Robot.xml"))
 
     # --- Training summary ---
     best_f = ea.f_best_so_far  # shape (3,) for NSGA-II
@@ -633,11 +637,11 @@ def run_multi_task_evolution(
 
 if __name__ == "__main__":
     run_multi_task_evolution(
-        num_generations=500,
-        population_size=200,
-        n_parents=100,
+        num_generations=200,
+        population_size=100,
+        n_parents=50,
         n_repeats=3,
         n_steps=500,
-        ckpt_interval=10,
+        ckpt_interval=25,
         results_dir=join(ROOT_DIR, "results", "final_project"),
     )

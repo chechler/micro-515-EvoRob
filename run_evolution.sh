@@ -4,7 +4,7 @@
 #SBATCH --error=logs/evorob_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=32G
 #SBATCH --time=48:00:00
 #SBATCH --partition=academic
@@ -14,7 +14,7 @@ source $HOME/miniconda3/etc/profile.d/conda.sh
 conda activate evorob
 
 export MUJOCO_GL=osmesa
-export SLURM_CPUS_PER_TASK=16
+export SLURM_CPUS_PER_TASK=64
 
 mkdir -p logs
 cd /home/hechler/ER_course/micro-515-EvoRob
