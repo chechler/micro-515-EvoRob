@@ -30,6 +30,8 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         default_camera_config: dict = DEFAULT_CAMERA_CONFIG,
         ctrl_cost_weight: float = 0.5,
         cfrc_cost_weight: float = 5e-4,
+        lateral_penalty_weight: float = 0.5,
+        fall_penalty: float = 50.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
     ):
@@ -39,11 +41,14 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
 
         utils.EzPickle.__init__(
             self, xml_file_path, frame_skip, default_camera_config,
-            ctrl_cost_weight, cfrc_cost_weight, reset_noise_scale, **kwargs,
+            ctrl_cost_weight, cfrc_cost_weight, lateral_penalty_weight,
+            fall_penalty, reset_noise_scale, **kwargs,
         )
 
         self._ctrl_cost_weight = ctrl_cost_weight
         self._cfrc_cost_weight = cfrc_cost_weight
+        self._lateral_penalty_weight = lateral_penalty_weight
+        self._fall_penalty = fall_penalty
         self._reset_noise_scale = reset_noise_scale
         self._stuck_count = 0
 
@@ -76,9 +81,14 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         healthy_reward = 1.0
         ctrl_cost = float(np.sum(action ** 2) * self._ctrl_cost_weight)
         cfrc_cost = float(np.sum(self.data.cfrc_ext[1:] ** 2) * self._cfrc_cost_weight)
+        lateral_penalty = float(self._lateral_penalty_weight * xyz_velocity[1] ** 2)
 
         terminated = self._is_terminated(xyz_velocity)
-        reward = healthy_reward + x_position - ctrl_cost - cfrc_cost
+        fall_penalty = self._fall_penalty if terminated else 0.0
+
+        # Hill: reward forward progress (x_position accumulates); no backward clip needed
+        reward = (healthy_reward + x_position
+                  - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
 
         info = {
             "healthy_reward": -10.0 if terminated else healthy_reward,
@@ -86,6 +96,8 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
             "ctrl_cost": ctrl_cost,
             "cfrc_cost": cfrc_cost,
             "x_velocity": x_velocity,
+            "y_velocity": float(xyz_velocity[1]),
+            "lateral_penalty": lateral_penalty,
         }
 
         if self.render_mode == "human":

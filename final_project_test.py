@@ -73,7 +73,7 @@ MY_CONTROLLER = None
 
 # --- Paths ---
 # Option A: directory that contains x_best.npy (recommended)
-CHECKPOINT_DIR = "results/final_test"
+CHECKPOINT_DIR = "results/final_project"
 
 # Option B: provide the robot XML and genotype as separate files
 ROBOT_XML_PATH = None   # e.g. "/abs/path/to/Robot.xml"
