@@ -659,9 +659,9 @@ def run_multi_task_evolution(
 
 if __name__ == "__main__":
     run_multi_task_evolution(
-        num_generations=200,
-        population_size=100,
-        n_parents=50,
+        num_generations=500,
+        population_size=200,
+        n_parents=100,
         n_repeats=3,
         n_steps=500,
         ckpt_interval=25,
