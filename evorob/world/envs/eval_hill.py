@@ -15,7 +15,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
     (velocity < 1 cm/s for > 10 s), or produces NaN/Inf accelerations.
     Height-based termination is not used since the robot legitimately climbs.
 
-    Training reward:  healthy_reward + x_position - ctrl_cost - cfrc_cost
+    Training reward:  healthy_reward + x_position² + z_position² - ctrl_cost - cfrc_cost
 
     The info dict always exposes the four keys required by the neutral
     leaderboard formula: healthy_reward, x_position, ctrl_cost, cfrc_cost.
@@ -30,7 +30,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         default_camera_config: dict = DEFAULT_CAMERA_CONFIG,
         ctrl_cost_weight: float = 0.5,
         cfrc_cost_weight: float = 5e-4,
-        lateral_penalty_weight: float = 0.5,
+        lateral_penalty_weight: float = 0.1,
         fall_penalty: float = 50.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
@@ -51,6 +51,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         self._fall_penalty = fall_penalty
         self._reset_noise_scale = reset_noise_scale
         self._stuck_count = 0
+        self._init_z = 0.0
 
         MujocoEnv.__init__(
             self, xml_file_path, frame_skip,
@@ -77,6 +78,8 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         xyz_velocity = (xyz_after - xyz_before) / self.dt
         x_velocity = float(xyz_velocity[0])
         x_position = float(xyz_after[0])
+        z_position = float(xyz_after[2])
+        z_gain = z_position - self._init_z
 
         healthy_reward = 1.0
         ctrl_cost = float(np.sum(action ** 2) * self._ctrl_cost_weight)
@@ -87,15 +90,19 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         fall_penalty = self._fall_penalty if terminated else 0.0
 
         reward = (healthy_reward + x_position * abs(x_position)
+                  + z_gain * abs(z_gain)
                   - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
 
         info = {
             "healthy_reward": -10.0 if terminated else healthy_reward,
             "x_position": x_position,
+            "z_position": z_position,
+            "z_gain": z_gain,
             "ctrl_cost": ctrl_cost,
             "cfrc_cost": cfrc_cost,
             "x_velocity": x_velocity,
             "y_velocity": float(xyz_velocity[1]),
+            "z_velocity": float(xyz_velocity[2]),
             "lateral_penalty": lateral_penalty,
         }
 
@@ -130,6 +137,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         qvel = self.init_qvel + noise ** 2 * self.np_random.standard_normal(self.model.nv)
         self.set_state(qpos, qvel)
         self._stuck_count = 0
+        self._init_z = float(self.data.body(1).xpos[2])
         return self._get_obs()
 
     def _get_reset_info(self):
