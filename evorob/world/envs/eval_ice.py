@@ -88,7 +88,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         terminated = self._is_terminated()
         fall_penalty = self._fall_penalty if terminated else 0.0
 
-        reward = (healthy_reward + x_after * x_after
+        reward = (healthy_reward + x_after * abs(x_after)
                   - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
 
         info = {
