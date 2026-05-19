@@ -152,10 +152,9 @@ class NSGAII(EA):
             self.f_best_so_far = current_best_fitness
             self.x_best_so_far = current_best_x
         else:
-            if np.all(current_best_fitness >= self.f_best_so_far):
-                if np.any(current_best_fitness > self.f_best_so_far):
-                    self.f_best_so_far = current_best_fitness
-                    self.x_best_so_far = current_best_x
+            if current_best_fitness.sum() > self.f_best_so_far.sum():
+                self.f_best_so_far = current_best_fitness
+                self.x_best_so_far = current_best_x
 
         if self.current_gen % 5 == 0:
             print(f"Generation {self.current_gen}:\t{self.f_best_so_far}")

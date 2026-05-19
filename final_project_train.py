@@ -663,7 +663,7 @@ if __name__ == "__main__":
         population_size=200,
         n_parents=100,
         n_repeats=3,
-        n_steps=500,
+        n_steps=1000,
         ckpt_interval=25,
         results_dir=join(ROOT_DIR, "results", "final_project"),
     )

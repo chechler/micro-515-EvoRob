@@ -88,9 +88,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         terminated = self._is_terminated()
         fall_penalty = self._fall_penalty if terminated else 0.0
 
-        # Ice: no reward for going backward — clip forward velocity at zero
-        forward_reward = max(0.0, x_velocity)
-        reward = (healthy_reward + forward_reward
+        reward = (healthy_reward + x_after * x_after
                   - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
 
         info = {
