@@ -105,12 +105,22 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             self.render()
         return self._get_obs(), reward, terminated, False, info
 
+    # Ice platform bounds from ice_world.xml:
+    #   <geom pos="70 0 0" size="80 5 0.1" type="box"/>
+    #   x half-extent=80: back edge at 70-80=-10; y half-extent=5: sides at ±5
+    _PLATFORM_X_BACK: float = -10.0
+    _PLATFORM_Y_ABS:  float =   5.0
+
     def _is_terminated(self) -> bool:
+        x = float(self.data.qpos[0])
+        y = float(self.data.qpos[1])
         z = float(self.data.qpos[2])
         return (
             not np.isfinite(self.state_vector()).all()
             or z < 0.3
             or z > 0.8
+            or x < self._PLATFORM_X_BACK
+            or abs(y) > self._PLATFORM_Y_ABS
         )
 
     def _get_obs(self):
