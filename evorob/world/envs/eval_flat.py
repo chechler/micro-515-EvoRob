@@ -34,6 +34,7 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         cfrc_cost_weight: float = 5e-4,
         lateral_penalty_weight: float = 0.5,
         z_vel_penalty_weight: float = 0.2,
+        alignment_weight: float = 2.0,
         fall_penalty: float = 500.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
@@ -45,13 +46,14 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(
             self, xml_file_path, frame_skip, default_camera_config,
             ctrl_cost_weight, cfrc_cost_weight, lateral_penalty_weight,
-            z_vel_penalty_weight, fall_penalty, reset_noise_scale, **kwargs,
+            z_vel_penalty_weight, alignment_weight, fall_penalty, reset_noise_scale, **kwargs,
         )
 
         self._ctrl_cost_weight = ctrl_cost_weight
         self._cfrc_cost_weight = cfrc_cost_weight
         self._lateral_penalty_weight = lateral_penalty_weight
         self._z_vel_penalty_weight = z_vel_penalty_weight
+        self._alignment_weight = alignment_weight
         self._fall_penalty = fall_penalty
         self._reset_noise_scale = reset_noise_scale
         self._init_z = 0.0
@@ -88,6 +90,10 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         x_after = float(xy_after[0])
         x_capped = min(x_after, self._X_REWARD_CAP)
 
+        R = self.data.body(1).xmat.reshape(3, 3)
+        facing_x = float(R[0, 0])  # +1 = facing world +x, -1 = facing world -x
+        alignment_reward = float(self._alignment_weight * facing_x)
+
         healthy_reward = 1.0
         ctrl_cost = float(np.sum(action ** 2) * self._ctrl_cost_weight)
         cfrc_cost = float(np.sum(self.data.cfrc_ext[1:] ** 2) * self._cfrc_cost_weight)
@@ -98,6 +104,7 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         fall_penalty = self._fall_penalty if terminated else 0.0
 
         reward = (healthy_reward + x_capped * abs(x_capped)
+                  + alignment_reward
                   - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty - fall_penalty)
 
         info = {
@@ -110,6 +117,8 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
             "z_velocity": z_velocity,
             "lateral_penalty": lateral_penalty,
             "z_vel_penalty": z_vel_penalty,
+            "alignment_reward": alignment_reward,
+            "facing_x": facing_x,
         }
 
         if self.render_mode == "human":
