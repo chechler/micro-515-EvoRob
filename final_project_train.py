@@ -565,7 +565,9 @@ def run_multi_task_evolution(
     print(f"Objectives : [flat, ice, hill]")
     print(f"Checkpoints: {results_dir}\n")
 
-    os.makedirs(results_dir, exist_ok=True)
+    if os.path.isdir(results_dir):
+        shutil.rmtree(results_dir)
+    os.makedirs(results_dir)
     _best_xml_stage = join(results_dir, "_best_robot.xml")  # staging copy of best robot
     _best_scalar = -np.inf
 
