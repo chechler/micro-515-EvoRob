@@ -34,7 +34,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         ctrl_cost_weight: float = 0.5,
         cfrc_cost_weight: float = 5e-4,
         lateral_penalty_weight: float = 0.5,
-        fall_penalty: float = 50.0,
+        fall_penalty: float = 500.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
     ):
@@ -107,9 +107,11 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
 
     # Ice platform bounds from ice_world.xml:
     #   <geom pos="70 0 0" size="80 5 0.1" type="box"/>
-    #   x half-extent=80: back edge at 70-80=-10; y half-extent=5: sides at ±5
-    _PLATFORM_X_BACK: float = -10.0
-    _PLATFORM_Y_ABS:  float =   5.0
+    #   x half-extent=80: back edge at 70-80=-10, front edge at 70+80=150
+    #   y half-extent=5: sides at ±5
+    _PLATFORM_X_BACK:  float = -10.0
+    _PLATFORM_X_FRONT: float = 150.0
+    _PLATFORM_Y_ABS:   float =   5.0
 
     def _is_terminated(self) -> bool:
         x = float(self.data.qpos[0])
@@ -120,6 +122,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             or z < 0.3
             or z > 0.8
             or x < self._PLATFORM_X_BACK
+            or x > self._PLATFORM_X_FRONT
             or abs(y) > self._PLATFORM_Y_ABS
         )
 
