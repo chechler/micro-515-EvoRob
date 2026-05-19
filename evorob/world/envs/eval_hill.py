@@ -90,7 +90,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         fall_penalty = self._fall_penalty if terminated else 0.0
 
         reward = (healthy_reward + x_position * abs(x_position)
-                  + z_gain * abs(z_gain)
+                  + max(0.0, z_gain) ** 2
                   - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
 
         info = {
@@ -110,11 +110,15 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
             self.render()
         return self._get_obs(), reward, terminated, False, info
 
+    _Z_FALL_THRESHOLD: float = -0.5  # terminate if torso drops 0.5 m below starting height
+
     def _is_terminated(self, xyz_velocity: np.ndarray) -> bool:
         qacc = self.data.qacc
         if np.any(np.isnan(qacc) | np.isinf(qacc) | (np.abs(qacc) > 1e6)):
             return True
         if self._torso_upside_down():
+            return True
+        if float(self.data.body(1).xpos[2]) - self._init_z < self._Z_FALL_THRESHOLD:
             return True
         if np.linalg.norm(xyz_velocity) < 1e-2:
             self._stuck_count += 1
