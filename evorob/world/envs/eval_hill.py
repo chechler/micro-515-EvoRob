@@ -95,7 +95,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         terminated = self._is_terminated(xyz_velocity)
         fall_penalty = self._fall_penalty if terminated else 0.0
 
-        reward = (healthy_reward + x_velocity * abs(x_velocity)
+        reward = (healthy_reward + 10.0 * x_velocity * abs(x_velocity)
                   + max(0.0, z_gain) ** 2
                   + alignment_reward
                   - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
