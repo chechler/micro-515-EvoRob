@@ -76,6 +76,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
+    _K_EXP: float = np.log(2.0)  # exp(1·k)−1 = 1.00 at x=1 m; crossover with x² near x=4.5 m
+
     def step(self, action):
         xy_before = self.data.qpos[:2].copy()
         z_before = float(self.data.qpos[2])
@@ -87,6 +89,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         y_velocity = (xy_after[1] - xy_before[1]) / self.dt
         z_velocity = (z_after - z_before) / self.dt
         x_after = float(xy_after[0])
+
+        x_exp_reward = float(np.exp(x_after * self._K_EXP) - 1.0)
 
         R = self.data.body(1).xmat.reshape(3, 3)
         facing_x = float(R[0, 0])  # +1 = facing world +x, -1 = facing world -x
@@ -101,7 +105,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         terminated = self._is_terminated()
         fall_penalty = self._fall_penalty if terminated else 0.0
 
-        reward = (healthy_reward + 10.0 * x_velocity * abs(x_velocity)
+        reward = (healthy_reward + x_exp_reward
                   + alignment_reward
                   - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty - fall_penalty)
 
@@ -116,6 +120,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             "lateral_penalty": lateral_penalty,
             "z_vel_penalty": z_vel_penalty,
             "alignment_reward": alignment_reward,
+            "x_exp_reward": x_exp_reward,
             "facing_x": facing_x,
         }
 
