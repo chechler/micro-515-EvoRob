@@ -76,7 +76,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
-    _K_EXP: float = np.log(2.0)  # exp(1·k)−1 = 1.00 at x=1 m; crossover with x² near x=4.5 m
+    _K_EXP: float = np.log(2.0)              # exp(1·k)−1 = 1.00 at x=1 m; crossover with x² near x=4.5 m
+    _OFF_PLATFORM_PENALTY: float = -100.0   # replaces forward reward when robot leaves platform
 
     def step(self, action):
         xy_before = self.data.qpos[:2].copy()
@@ -103,11 +104,15 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         z_vel_penalty = float(self._z_vel_penalty_weight * z_velocity ** 2)
 
         terminated = self._is_terminated()
-        fall_penalty = self._fall_penalty if terminated else 0.0
 
-        reward = (healthy_reward + x_exp_reward
-                  + alignment_reward
-                  - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty - fall_penalty)
+        if not terminated:
+            forward_reward = x_exp_reward
+            reward = (healthy_reward + forward_reward
+                      + alignment_reward
+                      - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty)
+        else:
+            forward_reward = self._OFF_PLATFORM_PENALTY
+            reward = healthy_reward + forward_reward - ctrl_cost - cfrc_cost
 
         info = {
             "healthy_reward": -10.0 if terminated else healthy_reward,
@@ -120,7 +125,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             "lateral_penalty": lateral_penalty,
             "z_vel_penalty": z_vel_penalty,
             "alignment_reward": alignment_reward,
-            "x_exp_reward": x_exp_reward,
+            "forward_reward": forward_reward,
             "facing_x": facing_x,
         }
 
@@ -137,12 +142,17 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
     _PLATFORM_Y_ABS:   float =   5.0
     _Z_FALL_THRESHOLD: float =  -0.5  # terminate if torso drops 0.5 m below starting height
 
+    def _torso_upside_down(self) -> bool:
+        R = self.data.body(1).xmat.reshape(3, 3)
+        return float(R[2, 2]) < 0.0
+
     def _is_terminated(self) -> bool:
         x = float(self.data.qpos[0])
         y = float(self.data.qpos[1])
         z = float(self.data.qpos[2])
         return (
             not np.isfinite(self.state_vector()).all()
+            or self._torso_upside_down()
             or z < 0.3
             or z > 0.8
             or z - self._init_z < self._Z_FALL_THRESHOLD
