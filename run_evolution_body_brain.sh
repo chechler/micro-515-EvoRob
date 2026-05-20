@@ -26,13 +26,12 @@ sbatch \
     --error="logs/${FULL_NAME}_%a.err" \
     << SBATCH_SCRIPT
 #!/bin/bash
-#SBATCH --array=0-2
+#SBATCH --array=0-2%1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=32G
 #SBATCH --time=48:00:00
-#SBATCH --partition=academic
 #SBATCH --account=micro-515
 
 source \$HOME/miniconda3/etc/profile.d/conda.sh
