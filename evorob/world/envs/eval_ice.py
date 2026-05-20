@@ -77,7 +77,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         )
 
     _K_EXP: float = np.log(2.0)              # exp(1·k)−1 = 1.00 at x=1 m; crossover with x² near x=4.5 m
-    _OFF_PLATFORM_PENALTY: float = -100.0   # replaces forward reward when robot leaves platform
+    _OFF_PLATFORM_PENALTY: float = -2000.0  # replaces forward reward when robot leaves platform
+    _BACKWARD_PENALTY_WEIGHT: float = 5.0   # per-step penalty for negative x; at x=-5 → -25/step
 
     def step(self, action):
         xy_before = self.data.qpos[:2].copy()
@@ -103,13 +104,15 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         lateral_penalty = float(self._lateral_penalty_weight * y_velocity ** 2)
         z_vel_penalty = float(self._z_vel_penalty_weight * z_velocity ** 2)
 
+        backward_penalty = float(max(0.0, -x_after) * self._BACKWARD_PENALTY_WEIGHT)
         terminated = self._is_terminated()
 
         if not terminated:
             forward_reward = x_exp_reward
             reward = (healthy_reward + forward_reward
                       + alignment_reward
-                      - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty)
+                      - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty
+                      - backward_penalty)
         else:
             forward_reward = self._OFF_PLATFORM_PENALTY
             reward = healthy_reward + forward_reward - ctrl_cost - cfrc_cost
@@ -126,6 +129,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             "z_vel_penalty": z_vel_penalty,
             "alignment_reward": alignment_reward,
             "forward_reward": forward_reward,
+            "backward_penalty": backward_penalty,
             "facing_x": facing_x,
         }
 
