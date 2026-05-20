@@ -42,6 +42,7 @@ Always include in your zip:
 import argparse
 import os
 import platform
+import sys
 import numpy as np
 
 if "MUJOCO_GL" not in os.environ:
@@ -73,7 +74,7 @@ MY_CONTROLLER = None
 
 # --- Paths ---
 # Option A: directory that contains x_best.npy (recommended)
-CHECKPOINT_DIR = "results/final_project"
+CHECKPOINT_DIR = None
 
 # Option B: provide the robot XML and genotype as separate files
 ROBOT_XML_PATH = None   # e.g. "/abs/path/to/Robot.xml"
@@ -197,6 +198,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     checkpoint_dir = args.best_dir_path if args.best_dir_path is not None else CHECKPOINT_DIR
+    if checkpoint_dir is None:
+        print("ERROR: --best_dir_path is required. Example:")
+        print("  python final_project_test.py --best_dir_path results/body_brain/seed_0")
+        sys.exit(1)
 
     world = EvalWorld()
 

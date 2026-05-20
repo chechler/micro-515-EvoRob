@@ -63,7 +63,7 @@ class FinalWorld(World):
     into every terrain template, then runs the controller in parallel episodes.
     """
 
-    def __init__(self):
+    def __init__(self, co_evolve_body: bool = True):
         # Choose your controller — swap for your own MLP, SO2Controller, Hebbian, or custom.
         # Whatever you choose determines self.n_weights (controller parameter count).
         #
@@ -75,7 +75,7 @@ class FinalWorld(World):
         )
 
         self.n_weights     = self.controller.n_params
-        self.n_body_params = 2          # 1 upper + 1 lower length, shared across all 4 legs
+        self.n_body_params = 2 if co_evolve_body else 0
         self.n_params      = self.n_weights + self.n_body_params
 
         # Temporary directory holds AntRobot.xml + one combined world XML per terrain
@@ -130,10 +130,13 @@ class FinalWorld(World):
         Returns (points, connectivity_mat) for AntRobot construction.
         """
         control_params = genotype[:self.n_weights] * 0.1
-        body_params    = (genotype[self.n_weights:] + 1) / 4 + 0.1
         self.controller.geno2pheno(control_params)
 
-        upper_leg, lower_leg = body_params  # shared across all 4 legs
+        body_raw = genotype[self.n_weights:]
+        if len(body_raw) >= 2:
+            upper_leg, lower_leg = (body_raw + 1) / 4 + 0.1
+        else:
+            upper_leg = lower_leg = 0.35  # fixed default (mid-range) when not co-evolving body
         u = np.sqrt(0.5) * upper_leg        # diagonal component for upper segment
         l = np.sqrt(0.5) * lower_leg        # diagonal component for lower segment
 
@@ -498,13 +501,13 @@ def evaluate_checkpoint(
 _worker_world: "FinalWorld | None" = None
 
 
-def _init_worker() -> None:
+def _init_worker(co_evolve_body: bool = True) -> None:
     # Set GL env vars before any MuJoCo context is created in this process.
     # Critical for spawn mode; harmless (and explicit) for fork mode.
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
     global _worker_world
-    _worker_world = FinalWorld()
+    _worker_world = FinalWorld(co_evolve_body=co_evolve_body)
 
 
 def _eval_individual_parallel(args: tuple) -> tuple:
@@ -534,20 +537,19 @@ def run_multi_task_evolution(
     bounds:          tuple = (-1, 1),
     ckpt_interval:   int = 25,
     results_dir:     str = None,
-    random_seed:     int = 42,
+    random_seed:     int = 0,
+    co_evolve_body:  bool = True,
 ) -> None:
     np.random.seed(random_seed)
 
-    world = FinalWorld()
+    world = FinalWorld(co_evolve_body=co_evolve_body)
     print(f"Genotype : {world.n_params} params"
           f"  (controller={world.n_weights}, body={world.n_body_params})")
 
     if results_dir is None:
         scratch = os.environ.get("SCRATCH")
-        if scratch:
-            results_dir = os.path.join(scratch, "micro-515-EvoRob", "results", "final_project")
-        else:
-            results_dir = join(ROOT_DIR, "results", "final_project")
+        base = os.path.join(scratch, "micro-515-EvoRob", "results") if scratch else join(ROOT_DIR, "results")
+        results_dir = join(base, f"seed_{random_seed}")
 
     ea = NSGAII(
         population_size=population_size,
@@ -590,6 +592,7 @@ def run_multi_task_evolution(
         max_workers=n_workers,
         mp_context=mp_ctx,
         initializer=_init_worker,
+        initargs=(co_evolve_body,),
     ) as executor:
         for gen in range(num_generations):
             t_gen0 = time.perf_counter()
@@ -660,12 +663,27 @@ def run_multi_task_evolution(
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MICRO-515 multi-task robot evolution")
+    parser.add_argument("--results-dir", default="results",
+                        help="Base directory for output; actual path is {results_dir}/seed_{seed}/")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="Random seed — controls numpy/EA randomness and the output sub-folder name")
+    parser.add_argument("--co-evolve-body", action=argparse.BooleanOptionalAction, default=True,
+                        help="Co-evolve leg lengths alongside the controller (--no-co-evolve-body to disable)")
+    args = parser.parse_args()
+
+    results_dir = os.path.join(args.results_dir, f"seed_{args.seed}")
+
     run_multi_task_evolution(
         num_generations=500,
-        population_size=100,
-        n_parents=70,
+        population_size=200,
+        n_parents=100,
         n_repeats=3,
         n_steps=500,
         ckpt_interval=25,
-        results_dir=join(ROOT_DIR, "results", "final_project"),
+        results_dir=results_dir,
+        random_seed=args.seed,
+        co_evolve_body=args.co_evolve_body,
     )
