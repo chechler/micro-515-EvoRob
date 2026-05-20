@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run this on the LOGIN NODE: bash run_evolution_brain_only.sh
 # Evolves the controller only; body uses fixed default leg lengths (0.35 m).
-# Detects the next available run ID, then submits a SLURM array job (seeds 0-2).
-# Results land in: results/brain_only_NNN/seed_{0,1,2}/
+# Submits a single job (seed 0) using a temp script file — no CLI flags to sbatch.
+# Results land in: results/brain_only_NNN/seed_0/
 
 RUN_NAME="brain_only"
 RESULTS_BASE="results"
@@ -17,16 +17,14 @@ fi
 ID_STR=$(printf "%03d" "${NEXT_ID}")
 FULL_NAME="${RUN_NAME}_${ID_STR}"
 
-echo "Submitting ${FULL_NAME} → ${RESULTS_BASE}/${FULL_NAME}/seed_{0,1,2}/"
+echo "Submitting ${FULL_NAME} → ${RESULTS_BASE}/${FULL_NAME}/seed_0/"
 mkdir -p logs
 
-sbatch \
-    --job-name="${FULL_NAME}" \
-    --output="logs/${FULL_NAME}_%a.out" \
-    --error="logs/${FULL_NAME}_%a.err" \
-    << SBATCH_SCRIPT
+TMPSCRIPT=$(mktemp /tmp/slurm_XXXXXX.sh)
+
+# Static directives (single-quoted — no expansion)
+cat > "${TMPSCRIPT}" << 'EOF'
 #!/bin/bash
-#SBATCH --array=0-2%1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
@@ -34,6 +32,13 @@ sbatch \
 #SBATCH --time=24:00:00
 #SBATCH --partition=academic
 #SBATCH --account=micro-515
+EOF
+
+# Dynamic directives (double-quoted — variables expand now)
+cat >> "${TMPSCRIPT}" << EOF
+#SBATCH --job-name=${FULL_NAME}
+#SBATCH --output=logs/${FULL_NAME}.out
+#SBATCH --error=logs/${FULL_NAME}.err
 
 source \$HOME/miniconda3/etc/profile.d/conda.sh
 conda activate evorob
@@ -43,9 +48,15 @@ export PYOPENGL_PLATFORM=egl
 export SLURM_CPUS_PER_TASK=64
 
 cd /home/hechler/ER_course/micro-515-EvoRob
-
-python -u final_project_train.py \
-    --results-dir "${RESULTS_BASE}/${FULL_NAME}" \
-    --seed "\${SLURM_ARRAY_TASK_ID}" \
+python -u final_project_train.py \\
+    --results-dir "${RESULTS_BASE}/${FULL_NAME}" \\
+    --seed "0" \\
     --no-co-evolve-body
-SBATCH_SCRIPT
+EOF
+
+echo "--- Script to be submitted ---"
+cat "${TMPSCRIPT}"
+echo "------------------------------"
+
+sbatch "${TMPSCRIPT}"
+rm "${TMPSCRIPT}"
