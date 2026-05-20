@@ -75,8 +75,6 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
-    _X_REWARD_CAP: float = 140.0  # 10 m inside the front edge; no gradient past here
-
     def step(self, action):
         xy_before = self.data.qpos[:2].copy()
         z_before = float(self.data.qpos[2])
@@ -88,7 +86,6 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         y_velocity = (xy_after[1] - xy_before[1]) / self.dt
         z_velocity = (z_after - z_before) / self.dt
         x_after = float(xy_after[0])
-        x_capped = min(x_after, self._X_REWARD_CAP)
 
         R = self.data.body(1).xmat.reshape(3, 3)
         facing_x = float(R[0, 0])  # +1 = facing world +x, -1 = facing world -x
@@ -103,7 +100,7 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
         terminated = self._is_terminated()
         fall_penalty = self._fall_penalty if terminated else 0.0
 
-        reward = (healthy_reward + x_capped * abs(x_capped)
+        reward = (healthy_reward + x_velocity * abs(x_velocity)
                   + alignment_reward
                   - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty - fall_penalty)
 
