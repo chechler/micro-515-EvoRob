@@ -76,7 +76,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
-    _K_EXP: float = np.log(2.0)              # exp(1·k)−1 = 1.00 at x=1 m; crossover with x² near x=4.5 m
+    _K_EXP: float = 0.1                      # reward doubles every ~7 m; exp(30·k)−1 ≈ 19 vs 1e9 at k=ln2
     _OFF_PLATFORM_PENALTY: float = -2000.0  # replaces forward reward when robot leaves platform
     _BACKWARD_PENALTY_WEIGHT: float = 5.0   # per-step penalty for negative x; at x=-5 → -25/step
 

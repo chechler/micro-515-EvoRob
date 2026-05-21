@@ -75,7 +75,7 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
-    _K_EXP: float = np.log(2.0)  # exp(1·k)−1 = 1.00 at x=1 m; crossover with x² near x=4.5 m
+    _K_EXP: float = 0.1  # reward doubles every ~7 m; exp(30·k)−1 ≈ 19 vs 1e9 at k=ln2
 
     def step(self, action):
         xy_before = self.data.qpos[:2].copy()
