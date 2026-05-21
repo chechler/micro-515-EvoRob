@@ -680,7 +680,7 @@ if __name__ == "__main__":
         num_generations=500,
         population_size=150,
         n_parents=80,
-        n_repeats=3,
+        n_repeats=5,
         n_steps=500,
         ckpt_interval=25,
         results_dir=results_dir,
