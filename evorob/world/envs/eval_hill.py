@@ -33,6 +33,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         lateral_penalty_weight: float = 0.1,
         alignment_weight: float = 2.0,
         fall_penalty: float = 50.0,
+        velocity_reward_weight: float = 1.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
     ):
@@ -43,7 +44,8 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(
             self, xml_file_path, frame_skip, default_camera_config,
             ctrl_cost_weight, cfrc_cost_weight, lateral_penalty_weight,
-            alignment_weight, fall_penalty, reset_noise_scale, **kwargs,
+            alignment_weight, fall_penalty, velocity_reward_weight,
+            reset_noise_scale, **kwargs,
         )
 
         self._ctrl_cost_weight = ctrl_cost_weight
@@ -51,6 +53,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         self._lateral_penalty_weight = lateral_penalty_weight
         self._alignment_weight = alignment_weight
         self._fall_penalty = fall_penalty
+        self._velocity_reward_weight = velocity_reward_weight
         self._reset_noise_scale = reset_noise_scale
         self._stuck_count = 0
         self._init_z = 0.0
@@ -96,10 +99,11 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         cfrc_cost = float(np.sum(self.data.cfrc_ext[1:] ** 2) * self._cfrc_cost_weight)
         lateral_penalty = float(self._lateral_penalty_weight * xyz_velocity[1] ** 2)
 
+        velocity_reward = float(self._velocity_reward_weight * x_velocity)
         terminated = self._is_terminated(xyz_velocity)
         fall_penalty = self._fall_penalty if terminated else 0.0
 
-        reward = (healthy_reward + x_exp_reward
+        reward = (healthy_reward + x_exp_reward + velocity_reward
                   + max(0.0, z_gain) ** 2
                   + alignment_reward
                   - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
@@ -117,6 +121,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
             "lateral_penalty": lateral_penalty,
             "alignment_reward": alignment_reward,
             "x_exp_reward": x_exp_reward,
+            "velocity_reward": velocity_reward,
             "facing_x": facing_x,
         }
 

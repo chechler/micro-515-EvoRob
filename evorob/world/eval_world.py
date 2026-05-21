@@ -71,8 +71,8 @@ class EvalWorld(World):
 
     @staticmethod
     def _default_controller():
-        from evorob.world.robot.controllers.mlp_hebbian import HebbianController
-        return HebbianController(input_size=27, output_size=8, hidden_size=8)
+        from evorob.world.robot.controllers.mlp import NeuralNetworkController
+        return NeuralNetworkController(input_size=27, output_size=8, hidden_size=8)
 
     def set_controller(self, controller: Controller) -> None:
         """Override the default MLP controller.

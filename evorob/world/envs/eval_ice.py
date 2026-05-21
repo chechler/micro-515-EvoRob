@@ -37,6 +37,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         z_vel_penalty_weight: float = 0.2,
         alignment_weight: float = 2.0,
         fall_penalty: float = 500.0,
+        velocity_reward_weight: float = 1.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
     ):
@@ -47,7 +48,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(
             self, xml_file_path, frame_skip, default_camera_config,
             ctrl_cost_weight, cfrc_cost_weight, lateral_penalty_weight,
-            z_vel_penalty_weight, alignment_weight, fall_penalty, reset_noise_scale, **kwargs,
+            z_vel_penalty_weight, alignment_weight, fall_penalty,
+            velocity_reward_weight, reset_noise_scale, **kwargs,
         )
 
         self._ctrl_cost_weight = ctrl_cost_weight
@@ -56,6 +58,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         self._z_vel_penalty_weight = z_vel_penalty_weight
         self._alignment_weight = alignment_weight
         self._fall_penalty = fall_penalty
+        self._velocity_reward_weight = velocity_reward_weight
         self._reset_noise_scale = reset_noise_scale
         self._init_z = 0.0
 
@@ -104,12 +107,13 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         lateral_penalty = float(self._lateral_penalty_weight * y_velocity ** 2)
         z_vel_penalty = float(self._z_vel_penalty_weight * z_velocity ** 2)
 
+        velocity_reward = float(self._velocity_reward_weight * x_velocity)
         backward_penalty = float(max(0.0, -x_after) * self._BACKWARD_PENALTY_WEIGHT)
         terminated = self._is_terminated()
 
         if not terminated:
             forward_reward = x_exp_reward
-            reward = (healthy_reward + forward_reward
+            reward = (healthy_reward + forward_reward + velocity_reward
                       + alignment_reward
                       - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty
                       - backward_penalty)
@@ -129,6 +133,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             "z_vel_penalty": z_vel_penalty,
             "alignment_reward": alignment_reward,
             "forward_reward": forward_reward,
+            "velocity_reward": velocity_reward,
             "backward_penalty": backward_penalty,
             "facing_x": facing_x,
         }
