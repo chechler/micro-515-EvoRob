@@ -71,7 +71,7 @@ class FinalWorld(World):
         # from evorob.world.robot.controllers.so2 import SO2Controller
         # self.controller = SO2Controller(input_size=27, output_size=8, hidden_size=8)
         self.controller = NeuralNetworkController(
-            input_size=27, output_size=8, hidden_size=8
+            input_size=27, output_size=8, hidden_size=8, hidden_size_2=8
         )
 
         self.n_weights     = self.controller.n_params
