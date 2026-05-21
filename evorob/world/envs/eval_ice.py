@@ -31,9 +31,10 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         robot_path: str,
         frame_skip: int = 5,
         default_camera_config: dict = DEFAULT_CAMERA_CONFIG,
-        ctrl_cost_weight: float = 0.7,
+        ctrl_cost_weight: float = 0.5,
         cfrc_cost_weight: float = 5e-4,
         lateral_penalty_weight: float = 0.5,
+        lateral_position_penalty_weight: float = 0.1,
         z_vel_penalty_weight: float = 0.2,
         alignment_weight: float = 2.0,
         fall_penalty: float = 500.0,
@@ -48,13 +49,15 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(
             self, xml_file_path, frame_skip, default_camera_config,
             ctrl_cost_weight, cfrc_cost_weight, lateral_penalty_weight,
-            z_vel_penalty_weight, alignment_weight, fall_penalty,
-            velocity_reward_weight, reset_noise_scale, **kwargs,
+            lateral_position_penalty_weight, z_vel_penalty_weight,
+            alignment_weight, fall_penalty, velocity_reward_weight,
+            reset_noise_scale, **kwargs,
         )
 
         self._ctrl_cost_weight = ctrl_cost_weight
         self._cfrc_cost_weight = cfrc_cost_weight
         self._lateral_penalty_weight = lateral_penalty_weight
+        self._lateral_position_penalty_weight = lateral_position_penalty_weight
         self._z_vel_penalty_weight = z_vel_penalty_weight
         self._alignment_weight = alignment_weight
         self._fall_penalty = fall_penalty
@@ -104,7 +107,9 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         healthy_reward = 1.0
         ctrl_cost = float(np.sum(action ** 2) * self._ctrl_cost_weight)
         cfrc_cost = float(np.sum(self.data.cfrc_ext[1:] ** 2) * self._cfrc_cost_weight)
+        y_position = float(xy_after[1])
         lateral_penalty = float(self._lateral_penalty_weight * y_velocity ** 2)
+        lateral_position_penalty = float(self._lateral_position_penalty_weight * y_position ** 2)
         z_vel_penalty = float(self._z_vel_penalty_weight * z_velocity ** 2)
 
         velocity_reward = float(self._velocity_reward_weight * x_velocity)
@@ -115,8 +120,8 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             forward_reward = x_exp_reward
             reward = (healthy_reward + forward_reward + velocity_reward
                       + alignment_reward
-                      - ctrl_cost - cfrc_cost - lateral_penalty - z_vel_penalty
-                      - backward_penalty)
+                      - ctrl_cost - cfrc_cost - lateral_penalty - lateral_position_penalty
+                      - z_vel_penalty - backward_penalty)
         else:
             forward_reward = self._OFF_PLATFORM_PENALTY
             reward = healthy_reward + forward_reward - ctrl_cost - cfrc_cost
@@ -130,6 +135,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
             "y_velocity": y_velocity,
             "z_velocity": z_velocity,
             "lateral_penalty": lateral_penalty,
+            "lateral_position_penalty": lateral_position_penalty,
             "z_vel_penalty": z_vel_penalty,
             "alignment_reward": alignment_reward,
             "forward_reward": forward_reward,

@@ -28,9 +28,10 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         robot_path: str,
         frame_skip: int = 5,
         default_camera_config: dict = DEFAULT_CAMERA_CONFIG,
-        ctrl_cost_weight: float = 0.7,
+        ctrl_cost_weight: float = 0.5,
         cfrc_cost_weight: float = 5e-4,
         lateral_penalty_weight: float = 0.1,
+        lateral_position_penalty_weight: float = 0.1,
         alignment_weight: float = 2.0,
         fall_penalty: float = 50.0,
         velocity_reward_weight: float = 1.0,
@@ -44,13 +45,14 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(
             self, xml_file_path, frame_skip, default_camera_config,
             ctrl_cost_weight, cfrc_cost_weight, lateral_penalty_weight,
-            alignment_weight, fall_penalty, velocity_reward_weight,
-            reset_noise_scale, **kwargs,
+            lateral_position_penalty_weight, alignment_weight, fall_penalty,
+            velocity_reward_weight, reset_noise_scale, **kwargs,
         )
 
         self._ctrl_cost_weight = ctrl_cost_weight
         self._cfrc_cost_weight = cfrc_cost_weight
         self._lateral_penalty_weight = lateral_penalty_weight
+        self._lateral_position_penalty_weight = lateral_position_penalty_weight
         self._alignment_weight = alignment_weight
         self._fall_penalty = fall_penalty
         self._velocity_reward_weight = velocity_reward_weight
@@ -97,7 +99,9 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         healthy_reward = 1.0
         ctrl_cost = float(np.sum(action ** 2) * self._ctrl_cost_weight)
         cfrc_cost = float(np.sum(self.data.cfrc_ext[1:] ** 2) * self._cfrc_cost_weight)
+        y_position = float(xyz_after[1])
         lateral_penalty = float(self._lateral_penalty_weight * xyz_velocity[1] ** 2)
+        lateral_position_penalty = float(self._lateral_position_penalty_weight * y_position ** 2)
 
         velocity_reward = float(self._velocity_reward_weight * x_velocity)
         terminated = self._is_terminated(xyz_velocity)
@@ -106,7 +110,8 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         reward = (healthy_reward + x_exp_reward + velocity_reward
                   + max(0.0, z_gain) ** 2
                   + alignment_reward
-                  - ctrl_cost - cfrc_cost - lateral_penalty - fall_penalty)
+                  - ctrl_cost - cfrc_cost - lateral_penalty - lateral_position_penalty
+                  - fall_penalty)
 
         info = {
             "healthy_reward": -10.0 if terminated else healthy_reward,
@@ -119,6 +124,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
             "y_velocity": float(xyz_velocity[1]),
             "z_velocity": float(xyz_velocity[2]),
             "lateral_penalty": lateral_penalty,
+            "lateral_position_penalty": lateral_position_penalty,
             "alignment_reward": alignment_reward,
             "x_exp_reward": x_exp_reward,
             "velocity_reward": velocity_reward,

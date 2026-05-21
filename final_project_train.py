@@ -679,7 +679,7 @@ if __name__ == "__main__":
     run_multi_task_evolution(
         num_generations=500,
         population_size=200,
-        n_parents=100,
+        n_parents=150,
         n_repeats=5,
         n_steps=500,
         ckpt_interval=25,
