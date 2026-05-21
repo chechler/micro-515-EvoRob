@@ -71,7 +71,7 @@ class FinalWorld(World):
         # from evorob.world.robot.controllers.so2 import SO2Controller
         # self.controller = SO2Controller(input_size=27, output_size=8, hidden_size=8)
         self.controller = NeuralNetworkController(
-            input_size=27, output_size=8, hidden_size=8, hidden_size_2=8
+            input_size=27, output_size=8, hidden_size=8
         )
 
         self.n_weights     = self.controller.n_params
@@ -532,9 +532,9 @@ def run_multi_task_evolution(
     n_parents:       int = 50,
     n_repeats:       int = 3,
     n_steps:         int = 500,
-    mutation_prob:   float = 0.3,
+    mutation_prob:   float = 0.5,
     crossover_prob:  float = 0.5,
-    bounds:          tuple = (-1, 1),
+    bounds:          tuple = (-3, 3),
     ckpt_interval:   int = 25,
     results_dir:     str = None,
     random_seed:     int = 0,
