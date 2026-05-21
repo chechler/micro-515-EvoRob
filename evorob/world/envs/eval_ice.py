@@ -31,7 +31,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         robot_path: str,
         frame_skip: int = 5,
         default_camera_config: dict = DEFAULT_CAMERA_CONFIG,
-        ctrl_cost_weight: float = 0.5,
+        ctrl_cost_weight: float = 0.7,
         cfrc_cost_weight: float = 5e-4,
         lateral_penalty_weight: float = 0.5,
         z_vel_penalty_weight: float = 0.2,
