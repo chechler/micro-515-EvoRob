@@ -132,7 +132,6 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
     #   x half-extent=80: back edge at 70-80=-10, front edge at 70+80=150
     #   y half-extent=5: sides at ±5
     _PLATFORM_X_BACK:  float = -10.0
-    _PLATFORM_X_FRONT: float = 150.0
     _PLATFORM_Y_ABS:   float =   5.0
     _Z_FALL_THRESHOLD: float =  -0.5  # terminate if torso drops 0.5 m below starting height
 
@@ -146,7 +145,6 @@ class EvalFlatEnv(MujocoEnv, utils.EzPickle):
             or z > 0.8
             or z - self._init_z < self._Z_FALL_THRESHOLD
             or x < self._PLATFORM_X_BACK
-            or x > self._PLATFORM_X_FRONT
             or abs(y) > self._PLATFORM_Y_ABS
         )
 
