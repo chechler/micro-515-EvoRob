@@ -142,17 +142,21 @@ class NSGAII(EA):
         self.f = fitness
         self.x = population
 
-        fitness_sums = fitness.min(axis=1)
-        best_in_current_gen_idx = np.argmax(fitness_sums)
+        n_obj = fitness.shape[1]
+        fitness_scores = n_obj / (1.0 / np.maximum(fitness, 1.0)).sum(axis=1)
+        best_in_current_gen_idx = np.argmax(fitness_scores)
 
         current_best_fitness = fitness[best_in_current_gen_idx]
         current_best_x = population[best_in_current_gen_idx]
+
+        def _hmean(f):
+            return len(f) / np.sum(1.0 / np.maximum(f, 1.0))
 
         if self.current_gen == 0:
             self.f_best_so_far = current_best_fitness
             self.x_best_so_far = current_best_x
         else:
-            if current_best_fitness.min() > self.f_best_so_far.min():
+            if _hmean(current_best_fitness) > _hmean(self.f_best_so_far):
                 self.f_best_so_far = current_best_fitness
                 self.x_best_so_far = current_best_x
 

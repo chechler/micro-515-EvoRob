@@ -676,7 +676,8 @@ def run_multi_task_evolution(
 
             for idx, (fitness, xml_str) in enumerate(results):
                 fitnesses[idx] = fitness
-                scalar = float(fitness.min())
+                n = len(fitness)
+                scalar = float(n / np.sum(1.0 / np.maximum(fitness, 1.0)))
                 if scalar > _best_scalar:
                     _best_scalar = scalar
                     if xml_str is not None:
@@ -717,8 +718,10 @@ def run_multi_task_evolution(
                 np.save(join(gen_dir, "f_best"), ea.f_best_so_far)
                 if os.path.isfile(_best_xml_stage):
                     shutil.copy2(_best_xml_stage, join(gen_dir, "Robot.xml"))
-                _, pop_ranks = ea.fast_nondominated_sort(ea.fitness)
-                _save_pareto_front(ea.fitness, pop_ranks, gen + 1, results_dir)
+
+    # --- Final Pareto front (single file for the whole run) ---
+    _, pop_ranks = ea.fast_nondominated_sort(ea.fitness)
+    _save_pareto_front(ea.fitness, pop_ranks, num_generations, results_dir)
 
     # --- Training summary ---
     best_f = ea.f_best_so_far  # shape (3,) for NSGA-II
@@ -756,7 +759,7 @@ if __name__ == "__main__":
     results_dir = os.path.join(args.results_dir, f"seed_{args.seed}")
 
     run_multi_task_evolution(
-        num_generations=500,
+        num_generations=1000,
         population_size=200,
         n_parents=120,
         n_repeats=5,
