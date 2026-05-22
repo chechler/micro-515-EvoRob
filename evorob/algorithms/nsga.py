@@ -142,7 +142,7 @@ class NSGAII(EA):
         self.f = fitness
         self.x = population
 
-        fitness_sums = fitness.sum(axis=1)
+        fitness_sums = fitness.min(axis=1)
         best_in_current_gen_idx = np.argmax(fitness_sums)
 
         current_best_fitness = fitness[best_in_current_gen_idx]
@@ -152,7 +152,7 @@ class NSGAII(EA):
             self.f_best_so_far = current_best_fitness
             self.x_best_so_far = current_best_x
         else:
-            if current_best_fitness.sum() > self.f_best_so_far.sum():
+            if current_best_fitness.min() > self.f_best_so_far.min():
                 self.f_best_so_far = current_best_fitness
                 self.x_best_so_far = current_best_x
 

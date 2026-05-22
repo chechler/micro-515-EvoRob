@@ -77,7 +77,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
-    _K_EXP: float = 0.1  # reward doubles every ~7 m; exp(30·k)−1 ≈ 19 vs 1e9 at k=ln2
+    _K_EXP: float = 0.15  # stronger position reward; exp(x·k)−1 grows faster on hill
 
     def step(self, action):
         xyz_before = self.data.body(1).xpos[:3].copy()

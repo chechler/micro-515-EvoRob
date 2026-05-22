@@ -523,6 +523,75 @@ def _eval_individual_parallel(args: tuple) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Plotting helpers
+# ---------------------------------------------------------------------------
+
+def _save_fitness_history(fitness_log: list, results_dir: str) -> None:
+    """Overwrite fitness_history.png with per-terrain best/mean over generations."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+
+    gens  = [e["gen"]  for e in fitness_log]
+    bests = np.array([e["best"] for e in fitness_log])
+    means = np.array([e["mean"] for e in fitness_log])
+    labels = ["Flat", "Ice", "Hill"]
+    colors = ["#2196F3", "#FF9800", "#4CAF50"]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    for j, (ax, label, color) in enumerate(zip(axes, labels, colors)):
+        ax.plot(gens, bests[:, j], color=color, linewidth=2,   label="best")
+        ax.plot(gens, means[:, j], color=color, linewidth=1.2,
+                linestyle="--", alpha=0.65, label="mean")
+        ax.set_title(label, fontweight="bold")
+        ax.set_xlabel("Generation")
+        ax.set_ylabel("Fitness")
+        ax.legend(fontsize=8)
+        ax.grid(alpha=0.3)
+    fig.suptitle("Per-terrain Fitness History", fontsize=13)
+    plt.tight_layout()
+    plt.savefig(join(results_dir, "fitness_history.png"), dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _save_pareto_front(fitnesses: np.ndarray, ranks: list, gen: int, results_dir: str) -> None:
+    """Save a 3-panel 2-D projection of the Pareto front coloured by rank."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+
+    rank_arr = np.array(ranks)
+    vmax     = max(int(rank_arr.max()), 1)
+    pairs    = [(0, 1, "Flat", "Ice"), (0, 2, "Flat", "Hill"), (1, 2, "Ice", "Hill")]
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    sc = None
+    for ax, (i, j, xl, yl) in zip(axes, pairs):
+        sc = ax.scatter(
+            fitnesses[:, i], fitnesses[:, j],
+            c=rank_arr, cmap="plasma_r", vmin=0, vmax=vmax,
+            alpha=0.65, s=18, edgecolors="none",
+        )
+        ax.set_xlabel(xl, fontsize=10)
+        ax.set_ylabel(yl, fontsize=10)
+        ax.set_title(f"{xl} vs {yl}")
+        ax.grid(alpha=0.3)
+    if sc is not None:
+        cbar = fig.colorbar(sc, ax=axes.ravel().tolist(), shrink=0.75)
+        cbar.set_label("Pareto rank  (0 = front)")
+    fig.suptitle(f"Population Pareto Front — Gen {gen}", fontsize=13)
+    plt.tight_layout()
+    plt.savefig(join(results_dir, f"pareto_front_gen{gen:04d}.png"), dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Main training loop
 # ---------------------------------------------------------------------------
 
@@ -587,6 +656,7 @@ def run_multi_task_evolution(
 
     t_run_start = time.perf_counter()
     gen_times: list[float] = []
+    fitness_log: list[dict] = []
 
     with ProcessPoolExecutor(
         max_workers=n_workers,
@@ -606,7 +676,7 @@ def run_multi_task_evolution(
 
             for idx, (fitness, xml_str) in enumerate(results):
                 fitnesses[idx] = fitness
-                scalar = float(fitness.sum())
+                scalar = float(fitness.min())
                 if scalar > _best_scalar:
                     _best_scalar = scalar
                     if xml_str is not None:
@@ -614,6 +684,13 @@ def run_multi_task_evolution(
                             fh.write(xml_str)
 
             ea.tell(pop, fitnesses, save_checkpoint=False)
+
+            fitness_log.append({
+                "gen":  gen + 1,
+                "best": fitnesses.max(axis=0).tolist(),
+                "mean": fitnesses.mean(axis=0).tolist(),
+            })
+            _save_fitness_history(fitness_log, results_dir)
 
             gen_time = time.perf_counter() - t_gen0
             gen_times.append(gen_time)
@@ -640,6 +717,8 @@ def run_multi_task_evolution(
                 np.save(join(gen_dir, "f_best"), ea.f_best_so_far)
                 if os.path.isfile(_best_xml_stage):
                     shutil.copy2(_best_xml_stage, join(gen_dir, "Robot.xml"))
+                _, pop_ranks = ea.fast_nondominated_sort(ea.fitness)
+                _save_pareto_front(ea.fitness, pop_ranks, gen + 1, results_dir)
 
     # --- Training summary ---
     best_f = ea.f_best_so_far  # shape (3,) for NSGA-II
