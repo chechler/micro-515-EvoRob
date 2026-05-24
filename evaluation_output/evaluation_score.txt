@@ -6,18 +6,18 @@ Controller : NeuralNetworkController  (280 params)
 Genotype   : 282 params  (controller=280, body=2)
 Reward     : healthy_reward + x_position - ctrl_cost - cfrc_cost
 
-Mean  : 20204.98
-Std   : 259.26
-Best  : 20914.84
-Worst : 19895.00
+Mean  : 27428.32
+Std   : 3459.55
+Best  : 31208.94
+Worst : 18892.29
 
-Episode   1:   19895.00
-Episode   2:   20262.05
-Episode   3:   20202.63
-Episode   4:   20026.28
-Episode   5:   20040.96
-Episode   6:   20244.44
-Episode   7:   20136.13
-Episode   8:   20914.84
-Episode   9:   20177.66
-Episode  10:   20149.84
+Episode   1:   18892.29
+Episode   2:   31208.94
+Episode   3:   26260.83
+Episode   4:   29357.76
+Episode   5:   28643.99
+Episode   6:   30623.88
+Episode   7:   25676.49
+Episode   8:   28417.08
+Episode   9:   25187.86
+Episode  10:   30014.12

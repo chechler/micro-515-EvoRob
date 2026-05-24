@@ -641,6 +641,8 @@ def run_multi_task_evolution(
     os.makedirs(results_dir)
     _best_xml_stage = join(results_dir, "_best_robot.xml")  # staging copy of best robot
     _best_scalar = -np.inf
+    _best_hmean_genotype: np.ndarray | None = None   # genotype matched to _best_xml_stage
+    _best_hmean_fitness:  np.ndarray | None = None   # fitness of that same individual
 
     # One worker process per allocated core. On SLURM, SLURM_CPUS_PER_TASK is
     # the correct limit; os.cpu_count() returns the full node count and causes
@@ -680,6 +682,8 @@ def run_multi_task_evolution(
                 scalar = float(n / np.sum(1.0 / np.maximum(fitness, 1.0)))
                 if scalar > _best_scalar:
                     _best_scalar = scalar
+                    _best_hmean_genotype = pop[idx].copy()
+                    _best_hmean_fitness  = fitness.copy()
                     if xml_str is not None:
                         with open(_best_xml_stage, "w") as fh:
                             fh.write(xml_str)
@@ -711,11 +715,21 @@ def run_multi_task_evolution(
                 pct_alive = float((col > 0).mean()) * 100
                 best_f    = float(col.max())
                 print(f"  {label}: mean={mean_f:+8.1f}  ({pct_alive:3.0f}% alive)  best={best_f:+8.1f}", flush=True)
+            if _best_hmean_fitness is not None:
+                hm = float(3 / np.sum(1.0 / np.maximum(_best_hmean_fitness, 1.0)))
+                print(f"  best_hmean_ever: flat={_best_hmean_fitness[0]:+8.1f}"
+                      f"  ice={_best_hmean_fitness[1]:+8.1f}"
+                      f"  hill={_best_hmean_fitness[2]:+8.1f}  hmean={hm:+8.1f}", flush=True)
             if gen % ckpt_interval == 0:
                 gen_dir = join(results_dir, str(gen))
                 os.makedirs(gen_dir, exist_ok=True)
-                np.save(join(gen_dir, "x_best"), ea.x_best_so_far)
-                np.save(join(gen_dir, "f_best"), ea.f_best_so_far)
+                # x_best / f_best = hmean-best individual; body (Robot.xml) and brain
+                # (x_best.npy) come from the *same* individual so they match at eval time.
+                np.save(join(gen_dir, "x_best"), _best_hmean_genotype)
+                np.save(join(gen_dir, "f_best"), _best_hmean_fitness)
+                # Also keep the sum-best for reference (may have better flat/ice).
+                np.save(join(gen_dir, "x_best_sum"), ea.x_best_so_far)
+                np.save(join(gen_dir, "f_best_sum"), ea.f_best_so_far)
                 if os.path.isfile(_best_xml_stage):
                     shutil.copy2(_best_xml_stage, join(gen_dir, "Robot.xml"))
 
@@ -724,7 +738,7 @@ def run_multi_task_evolution(
     _save_pareto_front(ea.fitness, pop_ranks, num_generations, results_dir)
 
     # --- Training summary ---
-    best_f = ea.f_best_so_far  # shape (3,) for NSGA-II
+    best_f = _best_hmean_fitness  # hmean-best — body+brain matched pair
     score_path = join(results_dir, "training_score.txt")
     with open(score_path, "w") as f:
         f.write("=" * 60 + "\n")
@@ -736,7 +750,7 @@ def run_multi_task_evolution(
                 f"  ({world.n_weights} params)\n")
         f.write(f"Genotype size   : {world.n_params}"
                 f"  (controller={world.n_weights}, body={world.n_body_params})\n\n")
-        f.write("Best individual (highest sum of objectives):\n")
+        f.write("Best individual (highest harmonic mean — body+brain matched):\n")
         labels = ["flat", "ice", "hill"]
         for label, val in zip(labels, best_f):
             f.write(f"  {label:<6}: {float(val):10.2f}\n")

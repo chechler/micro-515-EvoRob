@@ -238,13 +238,19 @@ class NSGAII(EA):
         Returns:
             Tuple[np.ndarray, np.ndarray]: Selected parent solutions and their fitness.
         """
-        fronts, population_rank = self.fast_nondominated_sort(fitness)
+        # Normalize objectives to [0,1] by observed range so that flat/ice (~28 000)
+        # and hill (~2 000) contribute equally to Pareto dominance and crowding distance.
+        f_min   = fitness.min(axis=0)
+        f_range = np.maximum(fitness.max(axis=0) - f_min, 1.0)
+        fitness_norm = (fitness - f_min) / f_range
 
-        # Compute crowding distance for all fronts
+        fronts, population_rank = self.fast_nondominated_sort(fitness_norm)
+
+        # Compute crowding distance for all fronts (in normalized space)
         crowding_distances = np.zeros(len(population))
         for front in fronts:
             if len(front) > 0:
-                distances = self.compute_crowding_distance(fitness, front)
+                distances = self.compute_crowding_distance(fitness_norm, front)
                 for idx, individual in enumerate(front):
                     crowding_distances[individual] = distances[idx]
 
