@@ -34,7 +34,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
         lateral_position_penalty_weight: float = 0.1,
         alignment_weight: float = 2.0,
         fall_penalty: float = 50.0,
-        velocity_reward_weight: float = 1.5,
+        velocity_reward_weight: float = 2.0,
         reset_noise_scale: float = 0.1,
         **kwargs,
     ):
@@ -77,7 +77,7 @@ class EvalHillEnv(MujocoEnv, utils.EzPickle):
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
         )
 
-    _K_EXP: float = 0.12  # moderate boost; harmonic-mean selector handles balance
+    _K_EXP: float = 0.15  # stronger position reward; exp(x·k)−1 grows faster on hill
 
     def step(self, action):
         xyz_before = self.data.body(1).xpos[:3].copy()

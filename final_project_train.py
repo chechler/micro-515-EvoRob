@@ -759,7 +759,7 @@ if __name__ == "__main__":
     results_dir = os.path.join(args.results_dir, f"seed_{args.seed}")
 
     run_multi_task_evolution(
-        num_generations=1000,
+        num_generations=1500,
         population_size=200,
         n_parents=120,
         n_repeats=5,
