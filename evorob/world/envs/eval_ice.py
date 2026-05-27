@@ -167,7 +167,7 @@ class EvalIceEnv(MujocoEnv, utils.EzPickle):
         return (
             not np.isfinite(self.state_vector()).all()
             or self._torso_upside_down()
-            or z < 0.3
+            or z < 0.0
             or z > 0.8
             or z - self._init_z < self._Z_FALL_THRESHOLD
             or x < self._PLATFORM_X_BACK
