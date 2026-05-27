@@ -132,7 +132,7 @@ class FinalWorld(World):
         if len(body_raw) >= 2:
             upper_leg, lower_leg = (body_raw + 1) / 4 + 0.1
         else:
-            upper_leg = lower_leg = 0.35  # fixed default (mid-range) when not co-evolving body
+            upper_leg, lower_leg = 0.60, 0.44  # fixed to run 023 evolved body when not co-evolving body
         u = np.sqrt(0.5) * upper_leg        # diagonal component for upper segment
         l = np.sqrt(0.5) * lower_leg        # diagonal component for lower segment
 
