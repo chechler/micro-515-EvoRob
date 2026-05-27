@@ -50,7 +50,7 @@ class NeuralNetworkController(Controller):
             self.hidden_to_output = encoding[end_i2h:].reshape(self.n_output, self.n_hidden)
 
     def geno2pheno(self, genotype):
-        self.set_weights(genotype)
+        self.set_weights(genotype * 0.1)
 
     def get_num_params(self):
         return self.n_params_i2h + self.n_params_h2h2 + self.n_params_h2o

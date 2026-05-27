@@ -25,6 +25,7 @@ if "MUJOCO_GL" not in os.environ:
         os.environ["MUJOCO_GL"] = "osmesa"
 
 import copy
+import json
 import multiprocessing
 import shutil
 import time
@@ -44,6 +45,7 @@ from evorob.algorithms.nsga import NSGAII
 from evorob.utils.filesys import get_last_checkpoint_dir, get_project_root
 from evorob.world.base import World
 from evorob.world.robot.controllers.mlp import NeuralNetworkController
+from evorob.world.robot.controllers.mlp_hebbian import HebbianController
 from evorob.world.robot.morphology.ant_custom_robot import AntRobot
 
 ROOT_DIR = get_project_root()
@@ -63,16 +65,11 @@ class FinalWorld(World):
     into every terrain template, then runs the controller in parallel episodes.
     """
 
-    def __init__(self, co_evolve_body: bool = True):
-        # Choose your controller — swap for your own MLP, SO2Controller, Hebbian, or custom.
-        # Whatever you choose determines self.n_weights (controller parameter count).
-        #
-        # from evorob.world.robot.controllers.mlp import NeuralNetworkController  # your impl
-        # from evorob.world.robot.controllers.so2 import SO2Controller
-        # self.controller = SO2Controller(input_size=27, output_size=8, hidden_size=8)
-        self.controller = NeuralNetworkController(
-            input_size=27, output_size=8, hidden_size=8
-        )
+    def __init__(self, co_evolve_body: bool = True, controller: str = "nn"):
+        if controller == "hebbian":
+            self.controller = HebbianController(input_size=27, output_size=8, hidden_size=8)
+        else:
+            self.controller = NeuralNetworkController(input_size=27, output_size=8, hidden_size=8)
 
         self.n_weights     = self.controller.n_params
         self.n_body_params = 2 if co_evolve_body else 0
@@ -129,8 +126,7 @@ class FinalWorld(World):
 
         Returns (points, connectivity_mat) for AntRobot construction.
         """
-        control_params = genotype[:self.n_weights] * 0.1
-        self.controller.geno2pheno(control_params)
+        self.controller.geno2pheno(genotype[:self.n_weights])
 
         body_raw = genotype[self.n_weights:]
         if len(body_raw) >= 2:
@@ -501,13 +497,13 @@ def evaluate_checkpoint(
 _worker_world: "FinalWorld | None" = None
 
 
-def _init_worker(co_evolve_body: bool = True) -> None:
+def _init_worker(co_evolve_body: bool = True, controller: str = "nn") -> None:
     # Set GL env vars before any MuJoCo context is created in this process.
     # Critical for spawn mode; harmless (and explicit) for fork mode.
     os.environ.setdefault("MUJOCO_GL", "egl")
     os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
     global _worker_world
-    _worker_world = FinalWorld(co_evolve_body=co_evolve_body)
+    _worker_world = FinalWorld(co_evolve_body=co_evolve_body, controller=controller)
 
 
 def _eval_individual_parallel(args: tuple) -> tuple:
@@ -608,10 +604,11 @@ def run_multi_task_evolution(
     results_dir:     str = None,
     random_seed:     int = 0,
     co_evolve_body:  bool = True,
+    controller:      str = "nn",
 ) -> None:
     np.random.seed(random_seed)
 
-    world = FinalWorld(co_evolve_body=co_evolve_body)
+    world = FinalWorld(co_evolve_body=co_evolve_body, controller=controller)
     print(f"Genotype : {world.n_params} params"
           f"  (controller={world.n_weights}, body={world.n_body_params})")
 
@@ -639,10 +636,28 @@ def run_multi_task_evolution(
     if os.path.isdir(results_dir):
         shutil.rmtree(results_dir)
     os.makedirs(results_dir)
+
+    # Save run metadata immediately so plots can identify controller type / hyperparams
+    # even if training is interrupted before training_score.txt is written.
+    _run_meta = {
+        "controller":      controller,
+        "n_weights":       world.n_weights,
+        "n_body_params":   world.n_body_params,
+        "n_params":        world.n_params,
+        "population_size": population_size,
+        "num_generations": num_generations,
+        "n_repeats":       n_repeats,
+        "n_steps":         n_steps,
+        "mutation_prob":   mutation_prob,
+        "random_seed":     random_seed,
+    }
+    with open(join(results_dir, "run_metadata.json"), "w") as _fh:
+        json.dump(_run_meta, _fh, indent=2)
+
     _best_xml_stage = join(results_dir, "_best_robot.xml")  # staging copy of best robot
     _best_scalar = -np.inf
-    _best_min_genotype: np.ndarray | None = None   # genotype matched to _best_xml_stage
-    _best_min_fitness:  np.ndarray | None = None   # fitness of that same individual
+    _best_hmean_genotype: np.ndarray | None = None   # genotype matched to _best_xml_stage
+    _best_hmean_fitness:  np.ndarray | None = None   # fitness of that same individual
 
     # One worker process per allocated core. On SLURM, SLURM_CPUS_PER_TASK is
     # the correct limit; os.cpu_count() returns the full node count and causes
@@ -664,7 +679,7 @@ def run_multi_task_evolution(
         max_workers=n_workers,
         mp_context=mp_ctx,
         initializer=_init_worker,
-        initargs=(co_evolve_body,),
+        initargs=(co_evolve_body, controller),
     ) as executor:
         for gen in range(num_generations):
             t_gen0 = time.perf_counter()
@@ -678,11 +693,11 @@ def run_multi_task_evolution(
 
             for idx, (fitness, xml_str) in enumerate(results):
                 fitnesses[idx] = fitness
-                scalar = float(np.min(fitness))
+                scalar = float(len(fitness) / np.sum(1.0 / np.maximum(fitness, 1e-8)))
                 if scalar > _best_scalar:
                     _best_scalar = scalar
-                    _best_min_genotype = pop[idx].copy()
-                    _best_min_fitness  = fitness.copy()
+                    _best_hmean_genotype = pop[idx].copy()
+                    _best_hmean_fitness  = fitness.copy()
                     if xml_str is not None:
                         with open(_best_xml_stage, "w") as fh:
                             fh.write(xml_str)
@@ -714,30 +729,42 @@ def run_multi_task_evolution(
                 pct_alive = float((col > 0).mean()) * 100
                 best_f    = float(col.max())
                 print(f"  {label}: mean={mean_f:+8.1f}  ({pct_alive:3.0f}% alive)  best={best_f:+8.1f}", flush=True)
-            if _best_min_fitness is not None:
-                print(f"  best_min_ever:  flat={_best_min_fitness[0]:+8.1f}"
-                      f"  ice={_best_min_fitness[1]:+8.1f}"
-                      f"  hill={_best_min_fitness[2]:+8.1f}"
-                      f"  min={float(np.min(_best_min_fitness)):+8.1f}", flush=True)
+            if _best_hmean_fitness is not None:
+                print(f"  best_hmean_ever:  flat={_best_hmean_fitness[0]:+8.1f}"
+                      f"  ice={_best_hmean_fitness[1]:+8.1f}"
+                      f"  hill={_best_hmean_fitness[2]:+8.1f}"
+                      f"  hmean={_best_scalar:+8.1f}", flush=True)
             if gen % ckpt_interval == 0:
                 gen_dir = join(results_dir, str(gen))
                 os.makedirs(gen_dir, exist_ok=True)
-                # x_best / f_best = min-best individual; body (Robot.xml) and brain
+                # x_best / f_best = hmean-best individual; body (Robot.xml) and brain
                 # (x_best.npy) come from the *same* individual so they match at eval time.
-                np.save(join(gen_dir, "x_best"), _best_min_genotype)
-                np.save(join(gen_dir, "f_best"), _best_min_fitness)
+                np.save(join(gen_dir, "x_best"), _best_hmean_genotype)
+                np.save(join(gen_dir, "f_best"), _best_hmean_fitness)
                 # Also keep the sum-best for reference (may have better flat/ice).
                 np.save(join(gen_dir, "x_best_sum"), ea.x_best_so_far)
                 np.save(join(gen_dir, "f_best_sum"), ea.f_best_so_far)
                 if os.path.isfile(_best_xml_stage):
                     shutil.copy2(_best_xml_stage, join(gen_dir, "Robot.xml"))
+                # Persist fitness log incrementally so crash-interrupted runs still have data.
+                with open(join(results_dir, "fitness_log.json"), "w") as _fh:
+                    json.dump(fitness_log, _fh)
+
+    # --- Persist complete fitness log (covers any gens after the last checkpoint) ---
+    with open(join(results_dir, "fitness_log.json"), "w") as _fh:
+        json.dump(fitness_log, _fh)
+
+    # --- Final population data for post-hoc violin/Pareto plots ---
+    # 'fitnesses' is the last generation's full evaluated batch (population_size × 3).
+    np.save(join(results_dir, "population_fitnesses_final"), fitnesses)
 
     # --- Final Pareto front (single file for the whole run) ---
     _, pop_ranks = ea.fast_nondominated_sort(ea.fitness)
     _save_pareto_front(ea.fitness, pop_ranks, num_generations, results_dir)
+    np.save(join(results_dir, "population_ranks_final"), np.array(pop_ranks))
 
     # --- Training summary ---
-    best_f = _best_min_fitness  # min-best — body+brain matched pair
+    best_f = _best_hmean_fitness  # hmean-best — body+brain matched pair
     score_path = join(results_dir, "training_score.txt")
     with open(score_path, "w") as f:
         f.write("=" * 60 + "\n")
@@ -749,7 +776,7 @@ def run_multi_task_evolution(
                 f"  ({world.n_weights} params)\n")
         f.write(f"Genotype size   : {world.n_params}"
                 f"  (controller={world.n_weights}, body={world.n_body_params})\n\n")
-        f.write("Best individual (highest minimum across objectives — body+brain matched):\n")
+        f.write("Best individual (highest harmonic mean — body+brain matched):\n")
         labels = ["flat", "ice", "hill"]
         for label, val in zip(labels, best_f):
             f.write(f"  {label:<6}: {float(val):10.2f}\n")
@@ -767,12 +794,14 @@ if __name__ == "__main__":
                         help="Random seed — controls numpy/EA randomness and the output sub-folder name")
     parser.add_argument("--co-evolve-body", action=argparse.BooleanOptionalAction, default=True,
                         help="Co-evolve leg lengths alongside the controller (--no-co-evolve-body to disable)")
+    parser.add_argument("--controller", choices=["nn", "hebbian"], default="nn",
+                        help="Controller type: nn (NeuralNetworkController) or hebbian (HebbianController)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, f"seed_{args.seed}")
 
     run_multi_task_evolution(
-        num_generations=1500,
+        num_generations=500,
         population_size=200,
         n_parents=120,
         n_repeats=5,
@@ -782,4 +811,5 @@ if __name__ == "__main__":
         results_dir=results_dir,
         random_seed=args.seed,
         co_evolve_body=args.co_evolve_body,
+        controller=args.controller,
     )

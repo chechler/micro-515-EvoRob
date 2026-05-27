@@ -1,8 +1,19 @@
 #!/bin/bash
-# Run this on the LOGIN NODE: bash run_evolution_body_brain.sh
+# Run this on the LOGIN NODE: bash run_evolution_body_brain.sh [nn|hebbian]
 # Co-evolves body morphology (leg lengths) alongside the controller.
 # Submits a single job (seed 0) using a temp script file — no CLI flags to sbatch.
 # Results land in: results/body_brain_NNN/seed_0/
+#
+# Examples:
+#   bash run_evolution_body_brain.sh          # defaults to nn
+#   bash run_evolution_body_brain.sh nn
+#   bash run_evolution_body_brain.sh hebbian
+
+CONTROLLER="${1:-nn}"
+if [[ "${CONTROLLER}" != "nn" && "${CONTROLLER}" != "hebbian" ]]; then
+    echo "Usage: $0 [nn|hebbian]"
+    exit 1
+fi
 
 RUN_NAME="body_brain"
 RESULTS_BASE="results"
@@ -17,7 +28,7 @@ fi
 ID_STR=$(printf "%03d" "${NEXT_ID}")
 FULL_NAME="${RUN_NAME}_${ID_STR}"
 
-echo "Submitting ${FULL_NAME} → ${RESULTS_BASE}/${FULL_NAME}/seed_0/"
+echo "Submitting ${FULL_NAME} (controller=${CONTROLLER}) → ${RESULTS_BASE}/${FULL_NAME}/seed_0/"
 mkdir -p logs
 
 TMPSCRIPT=$(mktemp /tmp/slurm_XXXXXX.sh)
@@ -51,7 +62,8 @@ cd /home/hechler/ER_course/micro-515-EvoRob
 python -u final_project_train.py \\
     --results-dir "${RESULTS_BASE}/${FULL_NAME}" \\
     --seed "0" \\
-    --co-evolve-body
+    --co-evolve-body \\
+    --controller "${CONTROLLER}"
 EOF
 
 echo "--- Script to be submitted ---"
