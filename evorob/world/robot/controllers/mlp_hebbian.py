@@ -14,7 +14,7 @@ class HebbianNumpyNetwork:
         self.size_l2 = n_hidden * n_output
         self.total_weights = self.size_l1 + self.size_l2
 
-        self.lr = 0.01
+        self.lr = 0.001
 
         self.A = np.zeros(self.total_weights)
         self.B = np.zeros(self.total_weights)
